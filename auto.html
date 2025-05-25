@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interactive Course Slides - Enhanced Editor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <!-- Progress Bar -->
+      <div class="progress-container">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text" id="progressText">1 of 10</div>
+      </div>
+
+      <!-- Slide Manager (Hidden by default) -->
+      <div class="slide-manager hidden" id="slideManager">
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+          "
+        >
+          <h3 style="font-size: 1.25rem; font-weight: 600">Manage Slides</h3>
+          <div style="display: flex; gap: 1rem">
+            <button class="btn btn-primary" id="addSlideBtn">
+              <i
+                data-lucide="plus"
+                style="margin-right: 0.5rem; width: 16px; height: 16px"
+              ></i>
+              Add Slide
+            </button>
+            <button class="btn btn-secondary" id="closeManagerBtn">
+              <i
+                data-lucide="x"
+                style="margin-right: 0.5rem; width: 16px; height: 16px"
+              ></i>
+              Close
+            </button>
+          </div>
+        </div>
+        <div class="slide-list" id="slideList"></div>
+      </div>
+
+      <!-- Slide Container -->
+      <div class="slide-container">
+        <div id="slideContent"></div>
+
+        <!-- Edit Overlay -->
+        <div class="edit-overlay">
+          <button class="edit-btn" id="editSlideBtn" title="Edit Slide">
+            <i data-lucide="edit-3"></i>
+          </button>
+          <button
+            class="edit-btn delete"
+            id="deleteSlideBtn"
+            title="Delete Slide"
+          >
+            <i data-lucide="trash-2"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <div class="navigation">
+        <button class="nav-button prev" id="prevBtn">
+          <i data-lucide="chevron-left"></i>
+          <span style="margin-left: 0.5rem">Previous</span>
+        </button>
+
+        <div
+          style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap"
+        >
+          <button
+            class="nav-button"
+            id="loadJsonBtn"
+            style="background: #10b981; color: white"
+          >
+            <i data-lucide="upload" style="margin-right: 0.5rem"></i>
+            Load JSON
+          </button>
+          <button
+            class="nav-button"
+            id="manageBtn"
+            style="background: #f59e0b; color: white"
+          >
+            <i data-lucide="settings" style="margin-right: 0.5rem"></i>
+            Manage
+          </button>
+          <button
+            class="nav-button"
+            id="downloadBtn"
+            style="background: #8b5cf6; color: white"
+          >
+            <i data-lucide="download" style="margin-right: 0.5rem"></i>
+            Download
+          </button>
+          <span class="slide-indicator" id="slideIndicator">Title</span>
+        </div>
+
+        <button class="nav-button next" id="nextBtn">
+          <span style="margin-right: 0.5rem">Next</span>
+          <i data-lucide="chevron-right"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- JSON Input Modal -->
+    <div class="modal-overlay" id="jsonModalOverlay">
+      <div class="modal-content" style="max-width: 800px">
+        <button class="modal-close" id="jsonModalClose">&times;</button>
+        <h3 class="modal-title">Load Course Data</h3>
+        <p style="color: #6b7280; margin-bottom: 1rem">
+          Paste your JSON course data below or upload a JSON file:
+        </p>
+
+        <div style="margin-bottom: 1rem">
+          <input
+            type="file"
+            id="jsonFileInput"
+            accept=".json"
+            class="form-input"
+          />
+        </div>
+
+        <textarea
+          id="jsonTextarea"
+          placeholder="Paste JSON here..."
+          class="form-textarea"
+          style="height: 300px; font-family: monospace; font-size: 0.875rem"
+        ></textarea>
+
+        <div class="form-actions">
+          <button id="jsonCancelBtn" class="btn btn-secondary">Cancel</button>
+          <button id="jsonLoadBtn" class="btn btn-primary">Load Course</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add/Edit Slide Modal -->
+    <div class="modal-overlay" id="slideEditModal">
+      <div class="modal-content" style="max-width: 800px">
+        <button class="modal-close" id="slideEditClose">&times;</button>
+        <h3 class="modal-title" id="slideEditTitle">Add New Slide</h3>
+
+        <form id="slideEditForm">
+          <div class="form-group">
+            <label class="form-label">Slide Type</label>
+            <select id="slideTypeSelect" class="form-select">
+              <option value="title">Title Slide</option>
+              <option value="courseInfo">Course Information</option>
+              <option value="textAndImage">Text and Image</option>
+              <option value="textAndBullets">Text with Bullet Points</option>
+              <option value="iconsWithTitles">Icons with Titles</option>
+              <option value="faq">FAQ</option>
+              <option value="flipCards">Flip Cards</option>
+              <option value="multipleChoice">Multiple Choice</option>
+              <option value="tabs">Tabs</option>
+              <option value="popups">Information Popups</option>
+            </select>
+          </div>
+
+          <div id="slideEditFields"></div>
+
+          <div class="form-actions">
+            <button
+              type="button"
+              id="slideEditCancel"
+              class="btn btn-secondary"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="btn btn-primary">Save Slide</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Audio Controls -->
+    <div class="audio-controls" id="audioControls">
+      <button class="audio-btn play" id="audioPlayBtn">
+        <i data-lucide="play" id="audioPlayIcon"></i>
+      </button>
+      <button class="audio-btn secondary" id="audioRestartBtn">
+        <i data-lucide="rotate-ccw"></i>
+      </button>
+      <button class="audio-btn secondary" id="audioTranscriptBtn">
+        <i data-lucide="file-text"></i>
+      </button>
+      <button
+        class="audio-btn secondary"
+        id="audioEditBtn"
+        title="Edit Audio Script"
+      >
+        <i data-lucide="edit"></i>
+      </button>
+      <div class="audio-progress">
+        <div class="audio-progress-fill" id="audioProgressFill"></div>
+      </div>
+    </div>
+
+    <!-- Audio Transcript Panel -->
+    <div class="audio-transcript" id="audioTranscript">
+      <div class="audio-transcript-header">
+        <h4>Audio Transcript</h4>
+        <button class="audio-transcript-close" id="audioTranscriptClose">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="audio-transcript-content" id="audioTranscriptContent">
+        No transcript available for this slide.
+      </div>
+    </div>
+
+    <!-- Regular Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+      <div class="modal-content">
+        <button class="modal-close" id="modalClose">&times;</button>
+        <h3 class="modal-title" id="modalTitle"></h3>
+        <p class="modal-text" id="modalText"></p>
+      </div>
+    </div>
+
+    <script src="courseData.js"></script>
+    <script src="slideRenderers.js"></script>
+    <script src="slideManager.js"></script>
+    <script src="slideEditor.js"></script>
+    <script src="audioManager.js"></script>
+    <script src="jsonLoader.js"></script>
+    <script src="courseDownloader.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
