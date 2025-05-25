@@ -75,6 +75,27 @@ const audioTranscriptContent = document.getElementById(
   "audioTranscriptContent"
 );
 
+// AI Help event listeners
+document
+  .getElementById("aiHelpBtn")
+  .addEventListener("click", AIHelper.openAIHelpModal);
+document
+  .getElementById("aiHelpClose")
+  .addEventListener("click", AIHelper.closeAIHelpModal);
+document
+  .getElementById("aiHelpCancel")
+  .addEventListener("click", AIHelper.closeAIHelpModal);
+document
+  .getElementById("copyPromptBtn")
+  .addEventListener("click", () => AIHelper.copyPromptToClipboard());
+
+// Close modal when clicking outside
+document.getElementById("aiHelpModal").addEventListener("click", (e) => {
+  if (e.target === document.getElementById("aiHelpModal")) {
+    AIHelper.closeAIHelpModal();
+  }
+});
+
 // Main render function
 function renderSlide() {
   if (window.slides.length === 0) {

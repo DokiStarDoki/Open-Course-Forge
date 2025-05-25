@@ -88,6 +88,15 @@
           </button>
           <button
             class="nav-button"
+            id="aiHelpBtn"
+            style="background: #10b981; color: white"
+            title="AI Course Creation Help"
+          >
+            <i data-lucide="help-circle" style="margin-right: 0.5rem"></i>
+            AI Help
+          </button>
+          <button
+            class="nav-button"
             id="manageBtn"
             style="background: #f59e0b; color: white"
           >
@@ -183,6 +192,94 @@
       </div>
     </div>
 
+    <!-- AI Help Modal -->
+    <div class="modal-overlay" id="aiHelpModal">
+      <div class="modal-content" style="max-width: 600px">
+        <button class="modal-close" id="aiHelpClose">&times;</button>
+        <h3 class="modal-title">AI Course Creation Assistant</h3>
+
+        <div style="margin-bottom: 1.5rem">
+          <p style="color: #6b7280; line-height: 1.6; margin-bottom: 1rem">
+            This AI prompt automatically generates courses from content.
+          </p>
+
+          <div
+            style="
+              background: #f0f9ff;
+              border: 1px solid #3b82f6;
+              border-radius: 0.5rem;
+              padding: 1rem;
+              margin-bottom: 1rem;
+            "
+          >
+            <h4 style="color: #1f2937; margin-bottom: 0.5rem; font-size: 1rem">
+              How to use:
+            </h4>
+            <ol style="color: #4b5563; margin-left: 1.5rem; line-height: 1.5">
+              <li>Copy the prompt using the button below</li>
+              <li>
+                Paste it into your preferred AI assistant (ChatGPT, Claude,
+                etc.)
+              </li>
+              <li>
+                Add your course information:
+                <ul style="margin-left: 1rem; margin-top: 0.5rem">
+                  <li>Course name and description</li>
+                  <li>Target length (e.g., "2 hours", "5 modules")</li>
+                  <li>Learning objectives</li>
+                  <li>Your source content or topic</li>
+                </ul>
+              </li>
+              <li>The AI will generate a complete course JSON</li>
+              <li>Copy the JSON and load it using the "Load JSON" button</li>
+            </ol>
+          </div>
+
+          <div
+            style="
+              background: #fef3c7;
+              border: 1px solid #f59e0b;
+              border-radius: 0.5rem;
+              padding: 1rem;
+              margin-bottom: 1.5rem;
+            "
+          >
+            <p style="color: #92400e; margin: 0; font-size: 0.875rem">
+              <strong>💡 Tip:</strong> The more specific you are about your
+              content and learning goals, the better the AI-generated course
+              will be!
+            </p>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button id="aiHelpCancel" class="btn btn-secondary">Close</button>
+          <button id="copyPromptBtn" class="btn btn-primary">
+            <i
+              data-lucide="copy"
+              style="margin-right: 0.5rem; width: 16px; height: 16px"
+            ></i>
+            Copy AI Prompt
+          </button>
+        </div>
+
+        <div
+          id="copySuccess"
+          style="
+            margin-top: 1rem;
+            padding: 0.75rem;
+            background: #ecfdf5;
+            border: 1px solid #10b981;
+            border-radius: 0.375rem;
+            color: #065f46;
+            display: none;
+          "
+        >
+          ✅ Prompt copied! Now paste it into your AI of choice.
+        </div>
+      </div>
+    </div>
+
     <!-- Audio Controls -->
     <div class="audio-controls" id="audioControls">
       <button class="audio-btn play" id="audioPlayBtn">
@@ -235,6 +332,7 @@
     <script src="audioManager.js"></script>
     <script src="jsonLoader.js"></script>
     <script src="courseDownloader.js"></script>
+    <script src="aiHelper.js"></script>
     <script src="script.js"></script>
   </body>
 </html>
