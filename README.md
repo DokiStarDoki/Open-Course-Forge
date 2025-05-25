@@ -6,7 +6,7 @@ Create engaging presentations with narration, interactivity, and editing tools�
 
 ## 🚀 Quick Start
 
-1. Open `auto.html`
+1. Open `index.html`
 2. Explore default slides or **Load JSON** to import your own
 3. Navigate with ←/→ or buttons
 4. Click ▶️ to hear narration
@@ -81,12 +81,24 @@ Create engaging presentations with narration, interactivity, and editing tools�
 
 ## 🔧 Tech Overview
 
-- **Files**:
-  - `auto.html`, `script.js`, `styles.css`, `*Manager.js`
-- **Frameworks**: GSAP, Lucide, ES6+
-- **Data Formats**:
-  - Legacy: Split by type
-  - Modern: Unified slide array
+**Main Files:**
+
+- `index.html` – Entry point for the course interface
+- `styles.css` – Visual styles for layout and components
+- `script.js` – Core logic and startup script
+- `aiHelper.js` – Generates AI prompts based on slide content
+- `audioManager.js` – Handles audio playback and text-to-speech
+- `courseData.js` – Default or imported course content
+- `courseDownloader.js` – Exports the course as standalone HTML
+- `jsonLoader.js` – Imports and validates external JSON content
+- `slideEditor.js` – Provides modal editing interface for slides
+- `slideManager.js` – Manages slide sequencing and navigation
+- `slideRenderers.js` – Displays different slide types dynamically
+
+Other:
+
+- `LICENSE` – Licensing terms
+- `README.md` – This user guide
 
 ---
 
@@ -101,10 +113,10 @@ Create engaging presentations with narration, interactivity, and editing tools�
 
 ## 🐛 Troubleshooting
 
-- Audio not working? Check browser TTS permissions
-- Broken images? Verify URLs
-- JSON error? Validate format
-- Layout issues? Test on multiple devices
+- **Audio not working?** Check browser TTS permissions
+- **Broken images?** Verify URLs
+- **JSON error?** Validate format
+- **Layout issues?** Test on multiple devices
 
 ---
 
