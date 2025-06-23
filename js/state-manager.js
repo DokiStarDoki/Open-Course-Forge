@@ -1,5 +1,5 @@
 /**
- * Course Forge MVP - State Management
+ * Course Forge MVP - Enhanced State Management (FIXED)
  * Handles global application state with persistence and change notifications
  */
 
@@ -28,7 +28,7 @@ class StateManager {
   }
 
   /**
-   * Set a value in the state using dot notation
+   * Set a value in the state using dot notation (ENHANCED)
    * @param {string} path - Dot notation path (e.g., 'courseConfig.title')
    * @param {*} value - Value to set
    */
@@ -52,15 +52,20 @@ class StateManager {
     // Update last saved timestamp
     this.state.lastSaved = new Date().toISOString();
 
+    // ENHANCED: Log state changes for debugging
+    if (CONFIG.DEBUG.ENABLED && path.includes("uploadedFiles")) {
+      console.log(`📝 State updated: ${path}`, {
+        oldCount: Array.isArray(oldValue) ? oldValue.length : "N/A",
+        newCount: Array.isArray(value) ? value.length : "N/A",
+        value: Array.isArray(value) ? value.map((f) => f.filename) : value,
+      });
+    }
+
     // Notify listeners
     this.notifyListeners(path, value, oldValue);
 
     // Trigger auto-save
     this.saveState();
-
-    if (CONFIG.DEBUG.ENABLED) {
-      console.log(`State updated: ${path} =`, value);
-    }
   }
 
   /**
@@ -94,8 +99,15 @@ class StateManager {
     this.listeners.get(path).add(callback);
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log(`Subscribed to state changes at: ${path}`);
+      console.log(`👂 Subscribed to state changes at: ${path}`);
+      console.log(
+        `   Total listeners for ${path}:`,
+        this.listeners.get(path).size
+      );
     }
+
+    // ADDED: Return unsubscribe function for convenience
+    return () => this.unsubscribe(path, callback);
   }
 
   /**
@@ -109,20 +121,48 @@ class StateManager {
       if (this.listeners.get(path).size === 0) {
         this.listeners.delete(path);
       }
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(`👂❌ Unsubscribed from state changes at: ${path}`);
+      }
     }
   }
 
   /**
-   * Notify all listeners for a specific path and parent paths
+   * Notify all listeners for a specific path and parent paths (ENHANCED)
    * @param {string} path - Path that changed
    * @param {*} newValue - New value
    * @param {*} oldValue - Previous value
    */
   notifyListeners(path, newValue, oldValue) {
+    if (CONFIG.DEBUG.ENABLED && path.includes("uploadedFiles")) {
+      console.log(`📢 Notifying listeners for: ${path}`, {
+        listenerCount: this.listeners.has(path)
+          ? this.listeners.get(path).size
+          : 0,
+        newValue: Array.isArray(newValue)
+          ? `${newValue.length} files`
+          : newValue,
+      });
+    }
+
     // Notify exact path listeners
     if (this.listeners.has(path)) {
-      this.listeners.get(path).forEach((callback) => {
+      const callbacks = Array.from(this.listeners.get(path));
+
+      if (CONFIG.DEBUG.ENABLED && path.includes("uploadedFiles")) {
+        console.log(
+          `🎯 Calling ${callbacks.length} exact listeners for ${path}`
+        );
+      }
+
+      callbacks.forEach((callback, index) => {
         try {
+          if (CONFIG.DEBUG.ENABLED && path.includes("uploadedFiles")) {
+            console.log(
+              `📞 Calling listener ${index + 1}/${callbacks.length} for ${path}`
+            );
+          }
           callback(newValue, oldValue);
         } catch (error) {
           console.error(`Error in state listener for ${path}:`, error);
@@ -136,7 +176,15 @@ class StateManager {
       const parentPath = pathParts.slice(0, i).join(".");
       if (this.listeners.has(parentPath)) {
         const parentValue = this.getState(parentPath);
-        this.listeners.get(parentPath).forEach((callback) => {
+        const parentCallbacks = Array.from(this.listeners.get(parentPath));
+
+        if (CONFIG.DEBUG.ENABLED && path.includes("uploadedFiles")) {
+          console.log(
+            `📞 Calling ${parentCallbacks.length} parent listeners for ${parentPath}`
+          );
+        }
+
+        parentCallbacks.forEach((callback) => {
           try {
             callback(parentValue, undefined);
           } catch (error) {
@@ -151,7 +199,7 @@ class StateManager {
   }
 
   /**
-   * Save state to localStorage
+   * Save state to localStorage (ENHANCED)
    */
   saveState() {
     try {
@@ -163,13 +211,12 @@ class StateManager {
         errors: [],
       };
 
-      localStorage.setItem(
-        CONFIG.LOCAL_STORAGE_KEYS.COURSE_STATE,
-        JSON.stringify(stateToSave)
-      );
+      const stateString = JSON.stringify(stateToSave);
+      localStorage.setItem(CONFIG.LOCAL_STORAGE_KEYS.COURSE_STATE, stateString);
 
       if (CONFIG.DEBUG.LOG_LEVEL === "debug") {
-        console.log("State saved to localStorage");
+        const files = stateToSave.courseConfig?.uploadedFiles || [];
+        console.log(`💾 State saved to localStorage (${files.length} files)`);
       }
     } catch (error) {
       console.warn("Failed to save state to localStorage:", error);
@@ -178,7 +225,7 @@ class StateManager {
   }
 
   /**
-   * Load state from localStorage
+   * Load state from localStorage (ENHANCED)
    */
   loadState() {
     try {
@@ -199,7 +246,16 @@ class StateManager {
         };
 
         if (CONFIG.DEBUG.ENABLED) {
-          console.log("State loaded from localStorage");
+          const files = this.state.courseConfig?.uploadedFiles || [];
+          console.log(
+            `💾 State loaded from localStorage (${files.length} files)`
+          );
+          if (files.length > 0) {
+            console.log(
+              "📁 Loaded files:",
+              files.map((f) => f.filename)
+            );
+          }
         }
       }
     } catch (error) {
@@ -212,6 +268,8 @@ class StateManager {
    * Clear all state and localStorage
    */
   clearState() {
+    const oldFiles = this.state.courseConfig?.uploadedFiles || [];
+
     this.state = {
       currentTab: "input",
       courseConfig: { ...CONFIG.DEFAULTS.COURSE_CONFIG },
@@ -242,7 +300,7 @@ class StateManager {
     });
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log("State cleared");
+      console.log(`🗑️ State cleared (removed ${oldFiles.length} files)`);
     }
   }
 
@@ -283,7 +341,7 @@ class StateManager {
       }
 
       if (CONFIG.DEBUG.ENABLED) {
-        console.log("Course data loaded successfully");
+        console.log("📥 Course data loaded successfully");
       }
 
       return true;
@@ -407,5 +465,22 @@ class StateManager {
   setProcessingStatus(isProcessing, step = null) {
     this.setState("isProcessing", isProcessing);
     this.setState("processingStep", step);
+  }
+
+  /**
+   * DEBUG: Get debug information about listeners and state
+   */
+  getDebugInfo() {
+    const listenerSummary = {};
+    this.listeners.forEach((callbacks, path) => {
+      listenerSummary[path] = callbacks.size;
+    });
+
+    return {
+      listeners: listenerSummary,
+      stateKeys: Object.keys(this.state),
+      fileCount: this.state.courseConfig?.uploadedFiles?.length || 0,
+      lastSaved: this.state.lastSaved,
+    };
   }
 }
