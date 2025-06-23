@@ -28,9 +28,9 @@ const CONFIG = {
 
   // UI Settings
   UI: {
-    ANIMATION_DURATION: 300,
-    STATUS_MESSAGE_DURATION: 3000,
-    ERROR_MESSAGE_DURATION: 5000,
+    ANIMATION_DURATION: 250,
+    STATUS_MESSAGE_DURATION: 1250,
+    ERROR_MESSAGE_DURATION: 4500,
   },
 
   // Content Processing
@@ -117,7 +117,7 @@ const CONFIG = {
 
   // Debug Settings
   DEBUG: {
-    ENABLED: false, // Set to false in production
+    ENABLED: true, // Set to false in production
     LOG_LEVEL: "info", // 'debug', 'info', 'warn', 'error'
   },
 };

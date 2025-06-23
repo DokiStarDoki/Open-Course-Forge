@@ -10,30 +10,38 @@ class CourseForgeApp {
     this.eventSystem = new EventSystem();
     this.tabManager = new TabManager(this.stateManager, this.eventSystem);
 
-    // Component initialization
-    this.initializeComponents();
-    this.setupEventListeners();
-    this.setupFileUpload();
-    this.restoreUIFromState();
+    // Component initialization (async)
+    this.initializeComponents()
+      .then(() => {
+        this.setupEventListeners();
+        this.setupFileUpload();
+        this.restoreUIFromState();
 
-    // Initialize Lucide icons
-    if (typeof lucide !== "undefined") {
-      lucide.createIcons();
-    }
+        // Initialize Lucide icons
+        if (typeof lucide !== "undefined") {
+          lucide.createIcons();
+        }
 
-    // Show initialization success
-    StatusManager.showSuccess("Course Forge MVP initialized successfully!");
+        // Show initialization success
+        StatusManager.showSuccess("Course Forge MVP initialized successfully!");
 
-    if (CONFIG.DEBUG.ENABLED) {
-      console.log("CourseForgeApp initialized");
-      this.setupDebugConsole();
-    }
+        if (CONFIG.DEBUG.ENABLED) {
+          console.log("CourseForgeApp initialized");
+          this.setupDebugConsole();
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to initialize app:", error);
+        StatusManager.showError(
+          "Failed to initialize application fully. Some features may not work."
+        );
+      });
   }
 
   /**
    * Initialize application components
    */
-  initializeComponents() {
+  async initializeComponents() {
     // Initialize file processor browser support check
     const support = FileProcessor.checkBrowserSupport();
     if (!support.allSupported) {
@@ -45,6 +53,24 @@ class CourseForgeApp {
         return;
       }
     }
+
+    // Initialize LLM Service
+    try {
+      this.llmService = new LLMService();
+      await this.llmService.initializeAPI();
+    } catch (error) {
+      console.error("Failed to initialize LLM Service:", error);
+      StatusManager.showWarning(
+        "AI features may not work properly. Check your API configuration."
+      );
+    }
+
+    // Initialize Chunk Manager
+    this.chunkManager = new ChunkManager(
+      this.stateManager,
+      this.eventSystem,
+      this.llmService
+    );
 
     // Set up auto-save indicator
     this.setupAutoSaveIndicator();
@@ -500,26 +526,45 @@ class CourseForgeApp {
    * Rechunk content using AI
    */
   async rechunkContent() {
-    StatusManager.showInfo("Content rechunking will be implemented in Phase 2");
-    // TODO: Implement AI chunking in Phase 2
+    if (!this.chunkManager) {
+      StatusManager.showError("Chunk manager not initialized");
+      return;
+    }
+
+    const courseConfig = this.stateManager.getState("courseConfig");
+
+    // Validate course config
+    if (!this.tabManager.validateCourseConfig(courseConfig)) {
+      StatusManager.showError("Please complete the course configuration first");
+      return;
+    }
+
+    // Confirm if chunks already exist
+    const existingChunks = this.stateManager.getState("chunks") || [];
+    if (existingChunks.length > 0) {
+      const hasUnlockedChunks = existingChunks.some((chunk) => !chunk.isLocked);
+      if (hasUnlockedChunks) {
+        const confirmed = confirm(
+          "This will regenerate unlocked chunks. Locked chunks will be preserved. Continue?"
+        );
+        if (!confirmed) return;
+      }
+    }
+
+    // Use chunk manager to generate chunks
+    await this.chunkManager.generateChunks(courseConfig);
   }
 
   /**
    * Add a new chunk manually
    */
   addNewChunk() {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const newChunk = {
-      ...CONFIG.DEFAULTS.CHUNK,
-      id: Date.now() + Math.random(),
-      title: `Chunk ${chunks.length + 1}`,
-      order: chunks.length,
-    };
+    if (!this.chunkManager) {
+      StatusManager.showError("Chunk manager not initialized");
+      return;
+    }
 
-    chunks.push(newChunk);
-    this.stateManager.setState("chunks", chunks);
-
-    StatusManager.showSuccess("New chunk added");
+    this.chunkManager.addNewChunk();
   }
 
   /**
@@ -540,12 +585,20 @@ class CourseForgeApp {
             `;
     } else {
       container.innerHTML = `
-                <div class="chunks-container">
+                <div class="chunks-container" id="chunksListContainer">
                     ${chunks
                       .map((chunk) => this.renderChunkItem(chunk))
                       .join("")}
                 </div>
             `;
+
+      // Setup drag and drop for reordering
+      if (this.chunkManager) {
+        const chunksListContainer = document.getElementById(
+          "chunksListContainer"
+        );
+        this.chunkManager.setupDragAndDrop(chunksListContainer);
+      }
     }
 
     // Update proceed button
@@ -566,43 +619,107 @@ class CourseForgeApp {
    * @returns {string} HTML for chunk item
    */
   renderChunkItem(chunk) {
+    const slideTypeOptions = CONFIG.SLIDE_TYPES.map(
+      (type) =>
+        `<option value="${type.value}" ${
+          chunk.slideType === type.value ? "selected" : ""
+        }>${type.label}</option>`
+    ).join("");
+
     return `
-            <div class="chunk-item ${
-              chunk.isLocked ? "locked" : ""
-            }" data-chunk-id="${chunk.id}">
+            <div class="chunk-item ${chunk.isLocked ? "locked" : ""}" 
+                 data-chunk-id="${chunk.id}" 
+                 draggable="true">
                 <div class="chunk-header">
-                    <div class="chunk-title">${chunk.title}</div>
+                    <div class="chunk-drag-handle">
+                        <i data-lucide="grip-vertical"></i>
+                    </div>
+                    <div class="chunk-title-container">
+                        <input type="text" 
+                               class="chunk-title-input" 
+                               value="${chunk.title}" 
+                               onchange="app.updateChunkTitle('${
+                                 chunk.id
+                               }', this.value)"
+                               ${chunk.isLocked ? "readonly" : ""}>
+                        <div class="chunk-meta">
+                            <span class="chunk-time">${
+                              chunk.estimatedTime || "2 min"
+                            }</span>
+                            <span class="chunk-status ${
+                              chunk.generatedContent ? "generated" : "pending"
+                            }">
+                                ${
+                                  chunk.generatedContent
+                                    ? "Generated"
+                                    : "Pending"
+                                }
+                            </span>
+                        </div>
+                    </div>
                     <div class="chunk-controls">
-                        <button class="btn btn-secondary" onclick="app.toggleChunkLock('${
-                          chunk.id
-                        }')" title="${
-      chunk.isLocked ? "Unlock" : "Lock"
-    } chunk">
+                        <button class="btn btn-secondary btn-sm" 
+                                onclick="app.toggleChunkLock('${chunk.id}')" 
+                                title="${
+                                  chunk.isLocked ? "Unlock" : "Lock"
+                                } chunk">
                             <i data-lucide="${
                               chunk.isLocked ? "lock" : "unlock"
                             }"></i>
                         </button>
-                        <select class="form-select" onchange="app.changeChunkType('${
-                          chunk.id
-                        }', this.value)">
-                            ${CONFIG.SLIDE_TYPES.map(
-                              (type) =>
-                                `<option value="${type.value}" ${
-                                  chunk.slideType === type.value
-                                    ? "selected"
-                                    : ""
-                                }>${type.label}</option>`
-                            ).join("")}
+                        <select class="form-select chunk-type-select" 
+                                onchange="app.changeChunkType('${
+                                  chunk.id
+                                }', this.value)"
+                                ${chunk.isLocked ? "disabled" : ""}>
+                            ${slideTypeOptions}
                         </select>
-                        <button class="btn btn-danger" onclick="app.removeChunk('${
-                          chunk.id
-                        }')" title="Remove chunk">
+                        <button class="btn btn-primary btn-sm" 
+                                onclick="app.editChunk('${chunk.id}')" 
+                                title="Edit chunk content">
+                            <i data-lucide="edit-3"></i>
+                        </button>
+                        <button class="btn btn-danger btn-sm" 
+                                onclick="app.removeChunk('${chunk.id}')" 
+                                title="Remove chunk">
                             <i data-lucide="trash-2"></i>
                         </button>
                     </div>
                 </div>
+                ${
+                  chunk.sourceContent
+                    ? `
+                    <div class="chunk-content-preview">
+                        <small class="chunk-content-text">${chunk.sourceContent.substring(
+                          0,
+                          150
+                        )}${
+                        chunk.sourceContent.length > 150 ? "..." : ""
+                      }</small>
+                    </div>
+                `
+                    : ""
+                }
             </div>
         `;
+  }
+
+  /**
+   * Update chunk title
+   */
+  updateChunkTitle(chunkId, newTitle) {
+    if (!this.chunkManager) return;
+    this.chunkManager.updateChunkTitle(chunkId, newTitle);
+  }
+
+  /**
+   * Edit chunk content
+   */
+  editChunk(chunkId) {
+    // For now, just show info - will be implemented in Phase 3
+    StatusManager.showInfo(
+      "Chunk editing will be available in Phase 3 - Content Generation"
+    );
   }
 
   /**
@@ -610,16 +727,8 @@ class CourseForgeApp {
    * @param {string} chunkId - Chunk ID
    */
   toggleChunkLock(chunkId) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const chunkIndex = chunks.findIndex((chunk) => chunk.id === chunkId);
-
-    if (chunkIndex >= 0) {
-      chunks[chunkIndex].isLocked = !chunks[chunkIndex].isLocked;
-      this.stateManager.setState("chunks", chunks);
-
-      const status = chunks[chunkIndex].isLocked ? "locked" : "unlocked";
-      StatusManager.showInfo(`Chunk ${status}`);
-    }
+    if (!this.chunkManager) return;
+    this.chunkManager.toggleChunkLock(chunkId);
   }
 
   /**
@@ -628,15 +737,8 @@ class CourseForgeApp {
    * @param {string} newType - New slide type
    */
   changeChunkType(chunkId, newType) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const chunkIndex = chunks.findIndex((chunk) => chunk.id === chunkId);
-
-    if (chunkIndex >= 0) {
-      chunks[chunkIndex].slideType = newType;
-      this.stateManager.setState("chunks", chunks);
-
-      StatusManager.showInfo(`Chunk type changed to ${newType}`);
-    }
+    if (!this.chunkManager) return;
+    this.chunkManager.changeChunkType(chunkId, newType);
   }
 
   /**
@@ -644,11 +746,8 @@ class CourseForgeApp {
    * @param {string} chunkId - Chunk ID
    */
   removeChunk(chunkId) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const updatedChunks = chunks.filter((chunk) => chunk.id !== chunkId);
-    this.stateManager.setState("chunks", updatedChunks);
-
-    StatusManager.showInfo("Chunk removed");
+    if (!this.chunkManager) return;
+    this.chunkManager.removeChunk(chunkId);
   }
 
   /**

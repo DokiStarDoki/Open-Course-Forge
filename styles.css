@@ -441,7 +441,7 @@ body {
   }
 }
 
-/* ===== CHUNKS CONTAINER (for future phases) ===== */
+/* ===== CHUNKS CONTAINER ===== */
 .chunks-container {
   display: flex;
   flex-direction: column;
@@ -451,13 +451,16 @@ body {
 .chunk-item {
   background: #f9fafb;
   border: 2px solid #e5e7eb;
-  border-radius: 0.5rem;
-  padding: 1rem;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
   transition: all 0.2s ease;
+  cursor: move;
 }
 
 .chunk-item:hover {
   border-color: #d1d5db;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
 }
 
 .chunk-item.locked {
@@ -465,22 +468,156 @@ body {
   background: #fffbeb;
 }
 
+.chunk-item.locked::before {
+  content: "🔒 LOCKED";
+  position: absolute;
+  top: -8px;
+  right: 1rem;
+  background: #fbbf24;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.chunk-item.dragging {
+  opacity: 0.5;
+  transform: rotate(2deg);
+}
+
+.chunk-item.drag-over {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
 .chunk-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.chunk-drag-handle {
+  color: #9ca3af;
+  cursor: grab;
+  padding: 0.5rem 0;
+}
+
+.chunk-drag-handle:hover {
+  color: #6b7280;
+}
+
+.chunk-drag-handle:active {
+  cursor: grabbing;
+}
+
+.chunk-title-container {
+  flex: 1;
+  min-width: 0;
+}
+
+.chunk-title-input {
+  width: 100%;
+  font-weight: 600;
+  color: #374151;
+  font-size: 1.125rem;
+  border: none;
+  background: transparent;
+  padding: 0.25rem 0;
   margin-bottom: 0.5rem;
 }
 
-.chunk-title {
+.chunk-title-input:focus {
+  outline: none;
+  background: white;
+  border: 1px solid #3b82f6;
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+}
+
+.chunk-title-input:read-only {
+  cursor: default;
+}
+
+.chunk-meta {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.chunk-time {
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.chunk-status {
+  font-size: 0.75rem;
   font-weight: 600;
-  color: #374151;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+}
+
+.chunk-status.generated {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.chunk-status.pending {
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .chunk-controls {
   display: flex;
   gap: 0.5rem;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.chunk-type-select {
+  min-width: 150px;
+  font-size: 0.875rem;
+}
+
+.chunk-content-preview {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.chunk-content-text {
+  color: #6b7280;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.btn-sm {
+  padding: 0.5rem;
+  font-size: 0.875rem;
+  min-width: auto;
+}
+
+.btn-sm i {
+  width: 16px;
+  height: 16px;
+}
+
+/* Drag and drop animations */
+@keyframes drag-preview {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.05) rotate(1deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.chunk-item.drag-preview {
+  animation: drag-preview 0.3s ease-in-out;
 }
 
 /* ===== RESPONSIVE DESIGN ===== */
