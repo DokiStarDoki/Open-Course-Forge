@@ -15,7 +15,7 @@ const CONFIG = {
 
   // Model Settings
   AI_MODELS: {
-    DEEPSEEK_R1: "deepseek/deepseek-r1",
+    DEEPSEEK_R1: "deepseek/deepseek-r1-0528-qwen3-8b:free",
     DEEPSEEK_CHAT: "deepseek/deepseek-chat",
   },
 

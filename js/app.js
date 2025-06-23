@@ -72,6 +72,13 @@ class CourseForgeApp {
       this.llmService
     );
 
+    // Initialize Content Generator
+    this.contentGenerator = new ContentGenerator(
+      this.stateManager,
+      this.eventSystem,
+      this.llmService
+    );
+
     // Set up auto-save indicator
     this.setupAutoSaveIndicator();
 
@@ -138,7 +145,11 @@ class CourseForgeApp {
       this.addNewChunk();
     });
 
-    // Export actions
+    // Generation actions
+    document.getElementById("generateAllBtn")?.addEventListener("click", () => {
+      this.generateAllContent();
+    });
+
     document.getElementById("exportJsonBtn")?.addEventListener("click", () => {
       this.exportCourseJson();
     });
@@ -292,11 +303,21 @@ class CourseForgeApp {
     // React to chunks changes
     this.stateManager.subscribe("chunks", () => {
       this.updateChunksUI();
+      this.updateGenerationUI();
     });
 
     // React to processing state changes
     this.stateManager.subscribe("isProcessing", (isProcessing) => {
       this.updateProcessingUI(isProcessing);
+    });
+
+    // React to content generation events
+    this.eventSystem.on("content:generated", () => {
+      this.updateGenerationUI();
+    });
+
+    this.eventSystem.on("content:updated", () => {
+      this.updateGenerationUI();
     });
   }
 
@@ -716,10 +737,20 @@ class CourseForgeApp {
    * Edit chunk content
    */
   editChunk(chunkId) {
-    // For now, just show info - will be implemented in Phase 3
-    StatusManager.showInfo(
-      "Chunk editing will be available in Phase 3 - Content Generation"
-    );
+    // Switch to generation tab and focus on this chunk
+    this.tabManager.switchTab("generation");
+
+    // Scroll to the specific chunk in generation view
+    setTimeout(() => {
+      const chunkElement = document.querySelector(
+        `[data-chunk-id="${chunkId}"]`
+      );
+      if (chunkElement) {
+        chunkElement.scrollIntoView({ behavior: "smooth", block: "center" });
+        chunkElement.classList.add("highlighted");
+        setTimeout(() => chunkElement.classList.remove("highlighted"), 2000);
+      }
+    }, 300);
   }
 
   /**
@@ -751,10 +782,298 @@ class CourseForgeApp {
   }
 
   /**
+   * Generate all content
+   */
+  async generateAllContent() {
+    if (!this.contentGenerator) {
+      StatusManager.showError("Content generator not initialized");
+      return;
+    }
+
+    await this.contentGenerator.generateAllContent();
+  }
+
+  /**
+   * Generate content for specific chunk
+   */
+  async generateChunkContent(chunkId) {
+    if (!this.contentGenerator) {
+      StatusManager.showError("Content generator not initialized");
+      return;
+    }
+
+    await this.contentGenerator.generateSlideContent(chunkId);
+  }
+
+  /**
+   * Regenerate content for specific chunk
+   */
+  async regenerateChunkContent(chunkId) {
+    if (!this.contentGenerator) {
+      StatusManager.showError("Content generator not initialized");
+      return;
+    }
+
+    await this.contentGenerator.regenerateSlideContent(chunkId);
+  }
+
+  /**
+   * Update generation UI
+   */
+  updateGenerationUI() {
+    const container = document.getElementById("generationContainer");
+    const chunks = this.stateManager.getState("chunks") || [];
+
+    if (!container) return;
+
+    if (chunks.length === 0) {
+      container.innerHTML = `
+                <div class="empty-state">
+                    <i data-lucide="sparkles" class="empty-icon"></i>
+                    <p>No chunks available for content generation.</p>
+                    <p>Please go back to the Chunking tab and create some chunks first.</p>
+                </div>
+            `;
+    } else {
+      container.innerHTML = `
+                <div class="generation-stats">
+                    ${this.renderGenerationStats(chunks)}
+                </div>
+                <div class="generation-actions">
+                    <button class="btn btn-primary" id="generateAllBtn" onclick="app.generateAllContent()">
+                        <i data-lucide="sparkles"></i>
+                        Generate All Content
+                    </button>
+                </div>
+                <div class="slides-container">
+                    ${chunks
+                      .map((chunk) => this.renderGenerationItem(chunk))
+                      .join("")}
+                </div>
+            `;
+    }
+
+    // Reinitialize icons
+    if (typeof lucide !== "undefined") {
+      lucide.createIcons();
+    }
+  }
+
+  /**
+   * Render generation statistics
+   */
+  renderGenerationStats(chunks) {
+    const total = chunks.length;
+    const generated = chunks.filter((chunk) => chunk.generatedContent).length;
+    const pending = total - generated;
+    const progress = total > 0 ? Math.round((generated / total) * 100) : 0;
+
+    return `
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-value">${total}</div>
+                    <div class="stat-label">Total Slides</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${generated}</div>
+                    <div class="stat-label">Generated</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${pending}</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${progress}%</div>
+                    <div class="stat-label">Complete</div>
+                </div>
+            </div>
+        `;
+  }
+
+  /**
+   * Render generation item for each chunk
+   */
+  renderGenerationItem(chunk) {
+    const hasContent = !!chunk.generatedContent;
+    const statusClass = hasContent ? "has-content" : "no-content";
+
+    return `
+            <div class="generation-item ${statusClass}" data-chunk-id="${
+      chunk.id
+    }">
+                <div class="generation-header">
+                    <div class="chunk-info">
+                        <h3 class="chunk-title">${chunk.title}</h3>
+                        <div class="chunk-meta">
+                            <span class="slide-type-badge">${this.getSlideTypeLabel(
+                              chunk.slideType
+                            )}</span>
+                            <span class="content-status ${
+                              hasContent ? "generated" : "pending"
+                            }">
+                                ${
+                                  hasContent
+                                    ? "Content Generated"
+                                    : "Pending Generation"
+                                }
+                            </span>
+                        </div>
+                    </div>
+                    <div class="generation-controls">
+                        <button class="btn btn-secondary btn-sm" 
+                                onclick="app.switchSlideType('${chunk.id}')" 
+                                title="Change slide type">
+                            <i data-lucide="shuffle"></i>
+                        </button>
+                        <button class="btn btn-primary btn-sm" 
+                                onclick="app.${
+                                  hasContent
+                                    ? "regenerateChunkContent"
+                                    : "generateChunkContent"
+                                }('${chunk.id}')" 
+                                title="${
+                                  hasContent ? "Regenerate" : "Generate"
+                                } content">
+                            <i data-lucide="${
+                              hasContent ? "refresh-cw" : "sparkles"
+                            }"></i>
+                            ${hasContent ? "Regenerate" : "Generate"}
+                        </button>
+                    </div>
+                </div>
+                <div class="slide-preview">
+                    ${
+                      window.slideRenderer
+                        ? window.slideRenderer.renderSlide(chunk, true)
+                        : this.renderBasicSlidePreview(chunk)
+                    }
+                </div>
+            </div>
+        `;
+  }
+
+  /**
+   * Render basic slide preview (fallback)
+   */
+  renderBasicSlidePreview(chunk) {
+    if (!chunk.generatedContent) {
+      return `
+                <div class="empty-slide-preview">
+                    <i data-lucide="file-text"></i>
+                    <p>Click "Generate" to create content for this slide</p>
+                </div>
+            `;
+    }
+
+    return `
+            <div class="basic-slide-preview">
+                <h4>${chunk.generatedContent.header || chunk.title}</h4>
+                <p>${
+                  chunk.generatedContent.text || "Generated content preview..."
+                }</p>
+            </div>
+        `;
+  }
+
+  /**
+   * Switch slide type for a chunk
+   */
+  async switchSlideType(chunkId) {
+    const chunk = this.getChunkById(chunkId);
+    if (!chunk) return;
+
+    // Create a modal to select new slide type
+    const newType = await this.showSlideTypeSelector(chunk.slideType);
+    if (newType && newType !== chunk.slideType) {
+      if (this.contentGenerator) {
+        await this.contentGenerator.changeSlideTypeAndRegenerate(
+          chunkId,
+          newType
+        );
+      }
+    }
+  }
+
+  /**
+   * Show slide type selector modal
+   */
+  async showSlideTypeSelector(currentType) {
+    return new Promise((resolve) => {
+      const options = CONFIG.SLIDE_TYPES.map(
+        (type) =>
+          `<option value="${type.value}" ${
+            type.value === currentType ? "selected" : ""
+          }>${type.label}</option>`
+      ).join("");
+
+      const modal = document.createElement("div");
+      modal.className = "slide-type-modal";
+      modal.innerHTML = `
+                <div class="modal-content">
+                    <h3>Change Slide Type</h3>
+                    <select id="slideTypeSelect" class="form-select">
+                        ${options}
+                    </select>
+                    <div class="modal-actions">
+                        <button class="btn btn-secondary" onclick="this.closest('.slide-type-modal').remove(); resolve(null)">Cancel</button>
+                        <button class="btn btn-primary" onclick="
+                            const value = document.getElementById('slideTypeSelect').value;
+                            this.closest('.slide-type-modal').remove();
+                            resolve(value);
+                        ">Change Type</button>
+                    </div>
+                </div>
+            `;
+
+      // Add modal styles
+      modal.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+                z-index: 1000;
+            `;
+
+      modal.querySelector(".modal-content").style.cssText = `
+                background: white; padding: 2rem; border-radius: 0.5rem; min-width: 300px;
+            `;
+
+      modal.querySelector(".modal-actions").style.cssText = `
+                display: flex; gap: 1rem; margin-top: 1rem; justify-content: flex-end;
+            `;
+
+      document.body.appendChild(modal);
+
+      // Handle the promise resolution
+      window.resolve = resolve;
+    });
+  }
+
+  /**
+   * Get chunk by ID
+   */
+  getChunkById(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const targetId = String(chunkId);
+    return chunks.find((chunk) => String(chunk.id) === targetId);
+  }
+
+  /**
+   * Get slide type label
+   */
+  getSlideTypeLabel(slideType) {
+    const slideTypeMap = new Map(
+      CONFIG.SLIDE_TYPES.map((type) => [type.value, type.label])
+    );
+    return slideTypeMap.get(slideType) || slideType;
+  }
+
+  /**
    * Export course as JSON
    */
   exportCourseJson() {
-    const courseData = this.stateManager.exportCourseData();
+    const courseData = this.contentGenerator
+      ? this.contentGenerator.exportGeneratedContent()
+      : this.stateManager.exportCourseData();
+
     const jsonString = JSON.stringify(courseData, null, 2);
 
     const timestamp = new Date().toISOString().slice(0, 10);
@@ -768,8 +1087,175 @@ class CourseForgeApp {
    * Export course as HTML
    */
   exportCourseHtml() {
-    StatusManager.showInfo("HTML export will be implemented in Phase 3");
-    // TODO: Implement HTML export in Phase 3
+    if (!this.contentGenerator) {
+      StatusManager.showError("Content generator not initialized");
+      return;
+    }
+
+    const courseData = this.contentGenerator.exportGeneratedContent();
+    const htmlContent = this.generateCourseHtml(courseData);
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `course-${timestamp}.html`;
+
+    FileProcessor.downloadAsFile(htmlContent, filename, "text/html");
+    StatusManager.showSuccess("Course exported as HTML");
+  }
+
+  /**
+   * Generate complete HTML course
+   */
+  generateCourseHtml(courseData) {
+    const slides = courseData.slides.filter((slide) => slide.content);
+
+    const slidesHtml = slides
+      .map((slide, index) => {
+        const slideHtml = window.slideRenderer
+          ? window.slideRenderer.renderSlide(slide, false)
+          : `<div class="slide"><h2>${
+              slide.title
+            }</h2><p>Content: ${JSON.stringify(slide.content)}</p></div>`;
+
+        return `
+                <section class="course-slide" data-slide-index="${index}">
+                    ${slideHtml}
+                </section>
+            `;
+      })
+      .join("");
+
+    return `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>${courseData.course.title}</title>
+                <style>
+                    ${this.getCourseExportStyles()}
+                </style>
+            </head>
+            <body>
+                <div class="course-container">
+                    <header class="course-header">
+                        <h1>${courseData.course.title}</h1>
+                        <div class="course-meta">
+                            <p><strong>Target Audience:</strong> ${
+                              courseData.course.targetAudience
+                            }</p>
+                            <p><strong>Estimated Duration:</strong> ${
+                              courseData.course.estimatedDuration
+                            }</p>
+                        </div>
+                        <div class="learning-objectives">
+                            <h3>Learning Objectives:</h3>
+                            <ul>
+                                ${courseData.course.learningObjectives
+                                  .map((obj) => `<li>${obj}</li>`)
+                                  .join("")}
+                            </ul>
+                        </div>
+                    </header>
+                    
+                    <main class="course-content">
+                        ${slidesHtml}
+                    </main>
+                    
+                    <footer class="course-footer">
+                        <p>Generated by Course Forge MVP on ${new Date().toLocaleDateString()}</p>
+                    </footer>
+                </div>
+                
+                <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+                <script>
+                    ${this.getCourseExportScript()}
+                </script>
+            </body>
+            </html>
+        `;
+  }
+
+  /**
+   * Get styles for exported course
+   */
+  getCourseExportStyles() {
+    return `
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; line-height: 1.6; color: #333; }
+            .course-container { max-width: 800px; margin: 0 auto; padding: 2rem; }
+            .course-header { text-align: center; margin-bottom: 3rem; padding-bottom: 2rem; border-bottom: 2px solid #e5e7eb; }
+            .course-header h1 { font-size: 2.5rem; color: #1f2937; margin-bottom: 1rem; }
+            .course-meta p { margin: 0.5rem 0; color: #6b7280; }
+            .learning-objectives { margin-top: 2rem; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto; }
+            .course-slide { margin-bottom: 4rem; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            .slide-title { font-size: 1.75rem; margin-bottom: 1rem; color: #1f2937; }
+            .slide-content { line-height: 1.8; }
+            .course-footer { text-align: center; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid #e5e7eb; color: #9ca3af; }
+            
+            /* Slide-specific styles */
+            .bullet-list { margin: 1rem 0; padding-left: 1.5rem; }
+            .icons-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin: 2rem 0; }
+            .icon-item { text-align: center; padding: 1rem; }
+            .icon-title { margin: 0.5rem 0; color: #1f2937; }
+            .tabs-container { margin: 1rem 0; }
+            .tab-buttons { display: flex; border-bottom: 2px solid #e5e7eb; }
+            .tab-button { padding: 0.75rem 1.5rem; border: none; background: #f9fafb; cursor: pointer; }
+            .tab-button.active { background: white; border-bottom: 2px solid #3b82f6; }
+            .tab-panel { padding: 1.5rem; display: none; }
+            .tab-panel.active { display: block; }
+            .flip-card { width: 200px; height: 150px; margin: 1rem; }
+            .multiple-choice .option-item { padding: 0.75rem; margin: 0.5rem 0; border: 1px solid #e5e7eb; border-radius: 4px; cursor: pointer; }
+            .faq-item { margin: 1rem 0; }
+            .faq-question { padding: 1rem; background: #f9fafb; cursor: pointer; border-radius: 4px; }
+        `;
+  }
+
+  /**
+   * Get JavaScript for exported course
+   */
+  getCourseExportScript() {
+    return `
+            // Initialize Lucide icons
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+            
+            // Tab functionality
+            function switchTab(button, index) {
+                const container = button.closest('.tabs');
+                const buttons = container.querySelectorAll('.tab-button');
+                const panels = container.querySelectorAll('.tab-panel');
+                
+                buttons.forEach(btn => btn.classList.remove('active'));
+                panels.forEach(panel => panel.classList.remove('active'));
+                
+                button.classList.add('active');
+                panels[index].classList.add('active');
+            }
+            
+            // FAQ functionality  
+            function toggleFaq(question) {
+                const item = question.parentElement;
+                const answer = item.querySelector('.faq-answer');
+                item.classList.toggle('open');
+                answer.style.display = answer.style.display === 'none' ? 'block' : 'none';
+            }
+            
+            // Multiple choice functionality
+            function selectOption(element, selectedIndex, correctIndex) {
+                const container = element.closest('.multiple-choice');
+                const options = container.querySelectorAll('.option-item');
+                
+                options.forEach(opt => opt.classList.remove('selected', 'correct', 'incorrect'));
+                element.classList.add('selected');
+                
+                if (selectedIndex === correctIndex) {
+                    element.classList.add('correct');
+                } else {
+                    element.classList.add('incorrect');
+                    options[correctIndex].classList.add('correct');
+                }
+            }
+        `;
   }
 
   /**
@@ -834,6 +1320,7 @@ class CourseForgeApp {
     // Update UI components
     this.updateUploadedFilesUI();
     this.updateChunksUI();
+    this.updateGenerationUI();
     this.validateInputForm();
   }
 
@@ -849,6 +1336,11 @@ class CourseForgeApp {
     if (currentTab && this.tabManager.isTabEnabled(currentTab)) {
       this.tabManager.switchTab(currentTab);
     }
+
+    // Update all UI components
+    setTimeout(() => {
+      this.updateGenerationUI();
+    }, 100);
   }
 
   /**
