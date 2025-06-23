@@ -3,336 +3,271 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Interactive Course Slides - Enhanced Editor</title>
+    <title>Course Forge MVP</title>
+
+    <!-- External Dependencies -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://unpkg.com/mammoth@1.4.2/mammoth.browser.min.js"></script>
+
+    <!-- Styles -->
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="container">
-      <!-- Progress Bar -->
-      <div class="progress-container">
-        <div class="progress-bar">
-          <div class="progress-fill" id="progressFill"></div>
-        </div>
-        <div class="progress-text" id="progressText">1 of 10</div>
+      <!-- Header -->
+      <div class="header">
+        <h1>Course Forge</h1>
+        <p>Transform your content into engaging Rise 360-style courses</p>
       </div>
 
-      <!-- Slide Manager (Hidden by default) -->
-      <div class="slide-manager hidden" id="slideManager">
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-          "
-        >
-          <h3 style="font-size: 1.25rem; font-weight: 600">Manage Slides</h3>
-          <div style="display: flex; gap: 1rem">
-            <button class="btn btn-primary" id="addSlideBtn">
-              <i
-                data-lucide="plus"
-                style="margin-right: 0.5rem; width: 16px; height: 16px"
-              ></i>
-              Add Slide
-            </button>
-            <button class="btn btn-secondary" id="closeManagerBtn">
-              <i
-                data-lucide="x"
-                style="margin-right: 0.5rem; width: 16px; height: 16px"
-              ></i>
-              Close
-            </button>
-          </div>
+      <!-- Progress Steps -->
+      <div class="progress-steps">
+        <div class="progress-step active" data-step="input">
+          <i data-lucide="upload"></i>
+          Input & Config
         </div>
-        <div class="slide-list" id="slideList"></div>
-      </div>
-
-      <!-- Slide Container -->
-      <div class="slide-container">
-        <div id="slideContent"></div>
-
-        <!-- Edit Overlay -->
-        <div class="edit-overlay">
-          <button class="edit-btn" id="editSlideBtn" title="Edit Slide">
-            <i data-lucide="edit-3"></i>
-          </button>
-          <button
-            class="edit-btn delete"
-            id="deleteSlideBtn"
-            title="Delete Slide"
-          >
-            <i data-lucide="trash-2"></i>
-          </button>
-        </div>
-      </div>
-
-      <!-- Navigation -->
-      <div class="navigation">
-        <button class="nav-button prev" id="prevBtn">
-          <i data-lucide="chevron-left"></i>
-          <span style="margin-left: 0.5rem">Previous</span>
-        </button>
-
-        <div
-          style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap"
-        >
-          <button
-            class="nav-button"
-            id="loadJsonBtn"
-            style="background: #10b981; color: white"
-          >
-            <i data-lucide="upload" style="margin-right: 0.5rem"></i>
-            Load JSON
-          </button>
-          <button
-            class="nav-button"
-            id="aiHelpBtn"
-            style="background: #10b981; color: white"
-            title="AI Course Creation Help"
-          >
-            <i data-lucide="help-circle" style="margin-right: 0.5rem"></i>
-            AI Help
-          </button>
-          <button
-            class="nav-button"
-            id="manageBtn"
-            style="background: #f59e0b; color: white"
-          >
-            <i data-lucide="settings" style="margin-right: 0.5rem"></i>
-            Manage
-          </button>
-          <button
-            class="nav-button"
-            id="downloadBtn"
-            style="background: #8b5cf6; color: white"
-          >
-            <i data-lucide="download" style="margin-right: 0.5rem"></i>
-            Download
-          </button>
-          <span class="slide-indicator" id="slideIndicator">Title</span>
-        </div>
-
-        <button class="nav-button next" id="nextBtn">
-          <span style="margin-right: 0.5rem">Next</span>
+        <div class="progress-arrow">
           <i data-lucide="chevron-right"></i>
-        </button>
-      </div>
-    </div>
-
-    <!-- JSON Input Modal -->
-    <div class="modal-overlay" id="jsonModalOverlay">
-      <div class="modal-content" style="max-width: 800px">
-        <button class="modal-close" id="jsonModalClose">&times;</button>
-        <h3 class="modal-title">Load Course Data</h3>
-        <p style="color: #6b7280; margin-bottom: 1rem">
-          Paste your JSON course data below or upload a JSON file:
-        </p>
-
-        <div style="margin-bottom: 1rem">
-          <input
-            type="file"
-            id="jsonFileInput"
-            accept=".json"
-            class="form-input"
-          />
         </div>
-
-        <textarea
-          id="jsonTextarea"
-          placeholder="Paste JSON here..."
-          class="form-textarea"
-          style="height: 300px; font-family: monospace; font-size: 0.875rem"
-        ></textarea>
-
-        <div class="form-actions">
-          <button id="jsonCancelBtn" class="btn btn-secondary">Cancel</button>
-          <button id="jsonLoadBtn" class="btn btn-primary">Load Course</button>
+        <div class="progress-step" data-step="chunking">
+          <i data-lucide="layout"></i>
+          Content Chunking
+        </div>
+        <div class="progress-arrow">
+          <i data-lucide="chevron-right"></i>
+        </div>
+        <div class="progress-step" data-step="generation">
+          <i data-lucide="sparkles"></i>
+          Content Generation
         </div>
       </div>
-    </div>
 
-    <!-- Add/Edit Slide Modal -->
-    <div class="modal-overlay" id="slideEditModal">
-      <div class="modal-content" style="max-width: 800px">
-        <button class="modal-close" id="slideEditClose">&times;</button>
-        <h3 class="modal-title" id="slideEditTitle">Add New Slide</h3>
-
-        <form id="slideEditForm">
-          <div class="form-group">
-            <label class="form-label">Slide Type</label>
-            <select id="slideTypeSelect" class="form-select">
-              <option value="title">Title Slide</option>
-              <option value="courseInfo">Course Information</option>
-              <option value="textAndImage">Text and Image</option>
-              <option value="textAndBullets">Text with Bullet Points</option>
-              <option value="iconsWithTitles">Icons with Titles</option>
-              <option value="faq">FAQ</option>
-              <option value="flipCards">Flip Cards</option>
-              <option value="multipleChoice">Multiple Choice</option>
-              <option value="tabs">Tabs</option>
-              <option value="popups">Information Popups</option>
-            </select>
-          </div>
-
-          <div id="slideEditFields"></div>
-
-          <div class="form-actions">
-            <button
-              type="button"
-              id="slideEditCancel"
-              class="btn btn-secondary"
-            >
-              Cancel
-            </button>
-            <button type="submit" class="btn btn-primary">Save Slide</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- AI Help Modal -->
-    <div class="modal-overlay" id="aiHelpModal">
-      <div class="modal-content" style="max-width: 600px">
-        <button class="modal-close" id="aiHelpClose">&times;</button>
-        <h3 class="modal-title">AI Course Creation Assistant</h3>
-
-        <div style="margin-bottom: 1.5rem">
-          <p style="color: #6b7280; line-height: 1.6; margin-bottom: 1rem">
-            This AI prompt automatically generates courses from content.
-          </p>
-
-          <div
-            style="
-              background: #f0f9ff;
-              border: 1px solid #3b82f6;
-              border-radius: 0.5rem;
-              padding: 1rem;
-              margin-bottom: 1rem;
-            "
-          >
-            <h4 style="color: #1f2937; margin-bottom: 0.5rem; font-size: 1rem">
-              How to use:
-            </h4>
-            <ol style="color: #4b5563; margin-left: 1.5rem; line-height: 1.5">
-              <li>Copy the prompt using the button below</li>
-              <li>
-                Paste it into your preferred AI assistant (ChatGPT, Claude,
-                etc.)
-              </li>
-              <li>
-                Add your course information:
-                <ul style="margin-left: 1rem; margin-top: 0.5rem">
-                  <li>Course name and description</li>
-                  <li>Target length (e.g., "2 hours", "5 modules")</li>
-                  <li>Learning objectives</li>
-                  <li>Your source content or topic</li>
-                </ul>
-              </li>
-              <li>The AI will generate a complete course JSON</li>
-              <li>Copy the JSON and load it using the "Load JSON" button</li>
-            </ol>
-          </div>
-
-          <div
-            style="
-              background: #fef3c7;
-              border: 1px solid #f59e0b;
-              border-radius: 0.5rem;
-              padding: 1rem;
-              margin-bottom: 1.5rem;
-            "
-          >
-            <p style="color: #92400e; margin: 0; font-size: 0.875rem">
-              <strong>💡 Tip:</strong> The more specific you are about your
-              content and learning goals, the better the AI-generated course
-              will be!
-            </p>
-          </div>
-        </div>
-
-        <div class="form-actions">
-          <button id="aiHelpCancel" class="btn btn-secondary">Close</button>
-          <button id="copyPromptBtn" class="btn btn-primary">
-            <i
-              data-lucide="copy"
-              style="margin-right: 0.5rem; width: 16px; height: 16px"
-            ></i>
-            Copy AI Prompt
+      <!-- Tab Navigation -->
+      <div class="tab-navigation">
+        <div class="tab-buttons">
+          <button class="tab-button active" data-tab="input">
+            <i data-lucide="upload" style="margin-right: 0.5rem"></i>
+            Input & Configuration
+          </button>
+          <button class="tab-button" data-tab="chunking" disabled>
+            <i data-lucide="layout" style="margin-right: 0.5rem"></i>
+            Content Chunking
+          </button>
+          <button class="tab-button" data-tab="generation" disabled>
+            <i data-lucide="sparkles" style="margin-right: 0.5rem"></i>
+            Content Generation
           </button>
         </div>
 
-        <div
-          id="copySuccess"
-          style="
-            margin-top: 1rem;
-            padding: 0.75rem;
-            background: #ecfdf5;
-            border: 1px solid #10b981;
-            border-radius: 0.375rem;
-            color: #065f46;
-            display: none;
-          "
-        >
-          ✅ Prompt copied! Now paste it into your AI of choice.
+        <div class="tab-content">
+          <!-- Tab 1: Input & Configuration -->
+          <div class="tab-panel active" id="input-panel">
+            <h2 style="margin-bottom: 1.5rem; color: #1f2937">
+              Upload Content & Configure Course
+            </h2>
+
+            <!-- File Upload Section -->
+            <div class="form-group">
+              <label class="form-label">Upload Source Content</label>
+              <div class="file-upload-area" id="fileUploadArea">
+                <div class="file-upload-icon">
+                  <i data-lucide="upload-cloud"></i>
+                </div>
+                <div class="file-upload-text">
+                  Drop files here or click to upload
+                </div>
+                <div class="file-upload-hint">
+                  Supports TXT, DOCX, and JSON files (max 15MB)
+                </div>
+                <input
+                  type="file"
+                  id="fileInput"
+                  multiple
+                  accept=".txt,.docx,.json"
+                  style="display: none"
+                />
+              </div>
+              <div class="uploaded-files" id="uploadedFiles"></div>
+            </div>
+
+            <!-- Course Configuration -->
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label" for="courseTitle">Course Title</label>
+                <input
+                  type="text"
+                  id="courseTitle"
+                  class="form-input"
+                  placeholder="Enter course title"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="estimatedDuration"
+                  >Estimated Duration</label
+                >
+                <input
+                  type="text"
+                  id="estimatedDuration"
+                  class="form-input"
+                  placeholder="e.g., 45 minutes"
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="targetAudience"
+                >Target Audience</label
+              >
+              <input
+                type="text"
+                id="targetAudience"
+                class="form-input"
+                placeholder="Describe your target audience"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="learningObjectives"
+                >Learning Objectives</label
+              >
+              <textarea
+                id="learningObjectives"
+                class="form-textarea"
+                placeholder="List the learning objectives for this course (one per line)"
+              ></textarea>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="additionalGuidance"
+                >Additional Guidance for AI</label
+              >
+              <textarea
+                id="additionalGuidance"
+                class="form-textarea"
+                placeholder="Any specific instructions or preferences for content generation..."
+              ></textarea>
+            </div>
+
+            <div class="form-actions">
+              <div>
+                <button class="btn btn-secondary" id="loadCourseBtn">
+                  <i data-lucide="folder-open"></i>
+                  Load Existing Course
+                </button>
+              </div>
+              <div>
+                <button
+                  class="btn btn-primary"
+                  id="proceedToChunkingBtn"
+                  disabled
+                >
+                  <i data-lucide="arrow-right"></i>
+                  Proceed to Chunking
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 2: Content Chunking -->
+          <div class="tab-panel" id="chunking-panel">
+            <div class="section-header">
+              <h2>Content Chunking</h2>
+              <div class="section-actions">
+                <button class="btn btn-secondary" id="addChunkBtn">
+                  <i data-lucide="plus"></i>
+                  Add Chunk
+                </button>
+                <button class="btn btn-primary" id="rechunkBtn">
+                  <i data-lucide="refresh-cw"></i>
+                  Rechunk Content
+                </button>
+              </div>
+            </div>
+
+            <div id="chunksContainer">
+              <div class="empty-state">
+                <i data-lucide="layout" class="empty-icon"></i>
+                <p>
+                  No chunks generated yet. Click "Rechunk Content" to begin.
+                </p>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn btn-secondary" id="backToInputBtn">
+                <i data-lucide="arrow-left"></i>
+                Back to Input
+              </button>
+              <button
+                class="btn btn-primary"
+                id="proceedToGenerationBtn"
+                disabled
+              >
+                <i data-lucide="arrow-right"></i>
+                Proceed to Generation
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab 3: Content Generation -->
+          <div class="tab-panel" id="generation-panel">
+            <div class="section-header">
+              <h2>Content Generation</h2>
+              <div class="section-actions">
+                <button class="btn btn-secondary" id="exportJsonBtn">
+                  <i data-lucide="download"></i>
+                  Export JSON
+                </button>
+                <button class="btn btn-success" id="exportHtmlBtn">
+                  <i data-lucide="external-link"></i>
+                  Export HTML
+                </button>
+              </div>
+            </div>
+
+            <div id="generationContainer">
+              <div class="empty-state">
+                <i data-lucide="sparkles" class="empty-icon"></i>
+                <p>Ready to generate content from your chunks.</p>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn btn-secondary" id="backToChunkingBtn">
+                <i data-lucide="arrow-left"></i>
+                Back to Chunking
+              </button>
+              <div class="action-group">
+                <button class="btn btn-secondary" id="previewCourseBtn">
+                  <i data-lucide="eye"></i>
+                  Preview Course
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Audio Controls -->
-    <div class="audio-controls" id="audioControls">
-      <button class="audio-btn play" id="audioPlayBtn">
-        <i data-lucide="play" id="audioPlayIcon"></i>
-      </button>
-      <button class="audio-btn secondary" id="audioRestartBtn">
-        <i data-lucide="rotate-ccw"></i>
-      </button>
-      <button class="audio-btn secondary" id="audioTranscriptBtn">
-        <i data-lucide="file-text"></i>
-      </button>
-      <button
-        class="audio-btn secondary"
-        id="audioEditBtn"
-        title="Edit Audio Script"
-      >
-        <i data-lucide="edit"></i>
-      </button>
-      <div class="audio-progress">
-        <div class="audio-progress-fill" id="audioProgressFill"></div>
-      </div>
-    </div>
+    <!-- Status Bar -->
+    <div class="status-bar" id="statusBar"></div>
 
-    <!-- Audio Transcript Panel -->
-    <div class="audio-transcript" id="audioTranscript">
-      <div class="audio-transcript-header">
-        <h4>Audio Transcript</h4>
-        <button class="audio-transcript-close" id="audioTranscriptClose">
-          <i data-lucide="x"></i>
-        </button>
-      </div>
-      <div class="audio-transcript-content" id="audioTranscriptContent">
-        No transcript available for this slide.
-      </div>
-    </div>
+    <!-- Hidden File Inputs -->
+    <input
+      type="file"
+      id="courseFileInput"
+      accept=".json"
+      style="display: none"
+    />
 
-    <!-- Regular Modal -->
-    <div class="modal-overlay" id="modalOverlay">
-      <div class="modal-content">
-        <button class="modal-close" id="modalClose">&times;</button>
-        <h3 class="modal-title" id="modalTitle"></h3>
-        <p class="modal-text" id="modalText"></p>
-      </div>
-    </div>
-
-    <script src="courseData.js"></script>
-    <script src="slideRenderers.js"></script>
-    <script src="slideManager.js"></script>
-    <script src="slideEditor.js"></script>
-    <script src="audioManager.js"></script>
-    <script src="jsonLoader.js"></script>
-    <script src="courseDownloader.js"></script>
-    <script src="aiHelper.js"></script>
-    <script src="script.js"></script>
+    <!-- JavaScript Modules -->
+    <script src="js/config.js"></script>
+    <script src="js/state-manager.js"></script>
+    <script src="js/event-system.js"></script>
+    <script src="js/file-processor.js"></script>
+    <script src="js/status-manager.js"></script>
+    <script src="js/tab-manager.js"></script>
+    <script src="js/app.js"></script>
   </body>
 </html>
