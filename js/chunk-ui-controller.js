@@ -282,12 +282,6 @@ class ChunkUIController {
       ? `
       <div class="chunk-content-preview">
         ${contentPreview}
-        <div class="chunk-preview-actions">
-          <button class="btn-link" onclick="chunkUIController.togglePreviewExpanded('${chunk.id}')">
-            <span class="expand-text">Show more</span>
-            <i data-lucide="chevron-down"></i>
-          </button>
-        </div>
       </div>
     `
       : "";
