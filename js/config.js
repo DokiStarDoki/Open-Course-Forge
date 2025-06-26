@@ -4,6 +4,11 @@
  */
 
 const CONFIG = {
+  // ====== API PROVIDER TOGGLE ======
+  // Set to true for ChatGPT API (secure, for real course data)
+  // Set to false for OpenRouter/DeepSeek (free, for debugging)
+  USE_CHATGPT_API: false,
+
   // File Upload Settings
   MAX_FILE_SIZE: 15 * 1024 * 1024, // 15MB in bytes
   SUPPORTED_EXTENSIONS: ["txt", "docx", "json"],
@@ -11,12 +16,19 @@ const CONFIG = {
   // API Configuration
   API_ENDPOINTS: {
     OPENROUTER: "https://openrouter.ai/api/v1/chat/completions",
+    OPENAI: "https://api.openai.com/v1/chat/completions",
   },
 
   // Model Settings
   AI_MODELS: {
+    // OpenRouter/DeepSeek Models (free)
     DEEPSEEK_R1: "deepseek/deepseek-r1-0528-qwen3-8b:free",
     DEEPSEEK_CHAT: "deepseek/deepseek-chat",
+
+    // OpenAI/ChatGPT Models (secure)
+    GPT_4O: "gpt-4o",
+    GPT_4O_MINI: "gpt-4o-mini",
+    GPT_4_TURBO: "gpt-4-turbo",
   },
 
   // Local Storage Keys
@@ -119,6 +131,47 @@ const CONFIG = {
   DEBUG: {
     ENABLED: true, // Set to false in production
     LOG_LEVEL: "info", // 'debug', 'info', 'warn', 'error'
+  },
+
+  // Helper methods for API provider logic
+  getActiveAPIProvider() {
+    return this.USE_CHATGPT_API ? "OPENAI" : "OPENROUTER";
+  },
+
+  getActiveAPIEndpoint() {
+    return this.USE_CHATGPT_API
+      ? this.API_ENDPOINTS.OPENAI
+      : this.API_ENDPOINTS.OPENROUTER;
+  },
+
+  getDefaultModel() {
+    return this.USE_CHATGPT_API
+      ? this.AI_MODELS.GPT_4O_MINI
+      : this.AI_MODELS.DEEPSEEK_R1;
+  },
+
+  getModelForTask(task) {
+    if (this.USE_CHATGPT_API) {
+      // Use different GPT models based on task complexity
+      switch (task) {
+        case "chunking":
+          return this.AI_MODELS.GPT_4O_MINI; // Faster for chunking
+        case "content_generation":
+          return this.AI_MODELS.GPT_4O; // Better quality for content
+        default:
+          return this.AI_MODELS.GPT_4O_MINI;
+      }
+    } else {
+      // Use DeepSeek models
+      switch (task) {
+        case "chunking":
+          return this.AI_MODELS.DEEPSEEK_R1; // Free model for chunking
+        case "content_generation":
+          return this.AI_MODELS.DEEPSEEK_CHAT; // Better for content
+        default:
+          return this.AI_MODELS.DEEPSEEK_R1;
+      }
+    }
   },
 };
 

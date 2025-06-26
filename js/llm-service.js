@@ -1,12 +1,13 @@
 /**
  * Course Forge MVP - LLM Service (XML-BASED EXTRACTION)
  * Handles communication with AI models using XML tags for reliable data extraction
- * IMPROVED: Uses XML tags + regex instead of fragile JSON parsing
+ * UPDATED: Now supports both OpenRouter/DeepSeek and ChatGPT API based on config
  */
 
 class LLMService {
   constructor() {
-    this.apiKey = null;
+    this.openRouterApiKey = null;
+    this.openAIApiKey = null;
     this.apiUrl = null;
     this.isReady = false;
     this.initializationPromise = null;
@@ -25,7 +26,7 @@ class LLMService {
         await this.loadLocalConfig();
       }
 
-      // Set API URL based on environment
+      // Set API URL based on configuration
       this.apiUrl = this.getAPIUrl();
 
       // Validate setup
@@ -35,17 +36,21 @@ class LLMService {
 
       if (CONFIG.DEBUG.ENABLED) {
         console.log("LLMService initialized successfully (XML Mode)");
+        console.log("API Provider:", CONFIG.getActiveAPIProvider());
         console.log("API URL:", this.apiUrl);
         console.log("Using proxy:", this.isUsingProxy());
-        console.log("Has API key:", !!this.apiKey);
+        console.log("Has required API key:", this.hasRequiredAPIKey());
       }
     } catch (error) {
       console.error("Failed to initialize LLMService:", error);
 
       // Show user-friendly error message
-      if (this.isDevelopment() && !this.apiKey) {
+      if (this.isDevelopment() && !this.hasRequiredAPIKey()) {
+        const provider = CONFIG.getActiveAPIProvider();
+        const keyName =
+          provider === "OPENAI" ? "OPENAI_API_KEY" : "OPENROUTER_API_KEY";
         StatusManager.showError(
-          "Please create js/local.config.js with your OpenRouter API key to use AI features"
+          `Please create js/local.config.js with your ${keyName} to use AI features`
         );
       } else {
         StatusManager.showError(
@@ -94,9 +99,18 @@ class LLMService {
       // Wait for local config to load
       await this.waitForLocalConfig();
 
-      if (window.LOCAL_CONFIG && window.LOCAL_CONFIG.OPENROUTER_API_KEY) {
-        this.apiKey = window.LOCAL_CONFIG.OPENROUTER_API_KEY;
-        console.log("✅ Local API key loaded");
+      if (window.LOCAL_CONFIG) {
+        // Load OpenRouter API key
+        if (window.LOCAL_CONFIG.OPENROUTER_API_KEY) {
+          this.openRouterApiKey = window.LOCAL_CONFIG.OPENROUTER_API_KEY;
+          console.log("✅ OpenRouter API key loaded");
+        }
+
+        // Load OpenAI API key
+        if (window.LOCAL_CONFIG.OPENAI_API_KEY) {
+          this.openAIApiKey = window.LOCAL_CONFIG.OPENAI_API_KEY;
+          console.log("✅ OpenAI API key loaded");
+        }
       }
     } catch (error) {
       console.warn("⚠️ Local config not available, will use proxy");
@@ -110,7 +124,11 @@ class LLMService {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeoutMs) {
-      if (window.LOCAL_CONFIG && window.LOCAL_CONFIG.OPENROUTER_API_KEY) {
+      if (
+        window.LOCAL_CONFIG &&
+        (window.LOCAL_CONFIG.OPENROUTER_API_KEY ||
+          window.LOCAL_CONFIG.OPENAI_API_KEY)
+      ) {
         return true;
       }
       await this.wait(100);
@@ -120,17 +138,46 @@ class LLMService {
   }
 
   /**
-   * Get API URL based on environment
+   * Wait utility function
+   */
+  wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Get API URL based on environment and configuration
    */
   getAPIUrl() {
     if (this.isDevelopment()) {
-      if (this.apiKey) {
-        return "https://openrouter.ai/api/v1/chat/completions";
+      if (this.hasRequiredAPIKey()) {
+        return CONFIG.getActiveAPIEndpoint();
       } else {
         return "https://your-vercel-deployment.vercel.app/api/chat";
       }
     } else {
       return "/api/chat";
+    }
+  }
+
+  /**
+   * Check if we have the required API key for the current provider
+   */
+  hasRequiredAPIKey() {
+    if (CONFIG.USE_CHATGPT_API) {
+      return !!this.openAIApiKey;
+    } else {
+      return !!this.openRouterApiKey;
+    }
+  }
+
+  /**
+   * Get the appropriate API key for the current provider
+   */
+  getCurrentAPIKey() {
+    if (CONFIG.USE_CHATGPT_API) {
+      return this.openAIApiKey;
+    } else {
+      return this.openRouterApiKey;
     }
   }
 
@@ -148,14 +195,20 @@ class LLMService {
     if (this.isUsingProxy()) {
       console.log("Using proxy URL:", this.apiUrl);
       return true;
-    } else if (!this.apiKey) {
+    } else if (!this.hasRequiredAPIKey()) {
+      const provider = CONFIG.getActiveAPIProvider();
+      const keyName =
+        provider === "OPENAI" ? "OPENAI_API_KEY" : "OPENROUTER_API_KEY";
+
       console.warn(
-        "No API key available. Please set up local.config.js with your OpenRouter API key."
+        `No ${provider} API key available. Please set up local.config.js with your ${keyName}.`
       );
       console.warn(
-        'Example: window.LOCAL_CONFIG = { OPENROUTER_API_KEY: "sk-or-v1-your-key-here" };'
+        `Example: window.LOCAL_CONFIG = { ${keyName}: "your-key-here" };`
       );
-      throw new Error("No API key available and proxy not properly configured");
+      throw new Error(
+        `No ${provider} API key available and proxy not properly configured`
+      );
     }
     return true;
   }
@@ -167,16 +220,25 @@ class LLMService {
     await this.ensureReady();
 
     const requestBody = {
-      model: options.model || CONFIG.AI_MODELS.DEEPSEEK_R1,
+      model: options.model || CONFIG.getDefaultModel(),
       messages: messages,
       max_tokens: options.maxTokens || 4000,
       temperature: options.temperature || 0.7,
-      top_p: options.topP || 0.9,
       stream: false,
-      stop: options.stop || null,
-      presence_penalty: 0.1,
-      frequency_penalty: 0.1,
     };
+
+    // Add provider-specific parameters
+    if (CONFIG.USE_CHATGPT_API) {
+      // OpenAI API parameters
+      requestBody.top_p = options.topP || 0.9;
+      if (options.stop) requestBody.stop = options.stop;
+    } else {
+      // OpenRouter API parameters
+      requestBody.top_p = options.topP || 0.9;
+      requestBody.stop = options.stop || null;
+      requestBody.presence_penalty = 0.1;
+      requestBody.frequency_penalty = 0.1;
+    }
 
     const requestOptions = {
       method: "POST",
@@ -187,15 +249,22 @@ class LLMService {
     };
 
     // Add authorization header if using direct API
-    if (!this.isUsingProxy() && this.apiKey) {
-      requestOptions.headers["Authorization"] = `Bearer ${this.apiKey}`;
-      requestOptions.headers["HTTP-Referer"] = window.location.origin;
-      requestOptions.headers["X-Title"] = "Course Forge MVP";
+    if (!this.isUsingProxy() && this.hasRequiredAPIKey()) {
+      const apiKey = this.getCurrentAPIKey();
+      requestOptions.headers["Authorization"] = `Bearer ${apiKey}`;
+
+      // Add provider-specific headers
+      if (!CONFIG.USE_CHATGPT_API) {
+        // OpenRouter specific headers
+        requestOptions.headers["HTTP-Referer"] = window.location.origin;
+        requestOptions.headers["X-Title"] = "Course Forge MVP";
+      }
     }
 
     try {
       if (CONFIG.DEBUG.ENABLED) {
         console.log("Making LLM request:", {
+          provider: CONFIG.getActiveAPIProvider(),
           url: this.apiUrl,
           model: requestBody.model,
           messageCount: messages.length,
@@ -215,8 +284,8 @@ class LLMService {
             errorMessage = "Invalid request format. Please try again.";
             break;
           case 401:
-            errorMessage =
-              "Invalid API key. Please check your OpenRouter API key configuration.";
+            const provider = CONFIG.getActiveAPIProvider();
+            errorMessage = `Invalid API key. Please check your ${provider} API key configuration.`;
             break;
           case 429:
             errorMessage = "Rate limit exceeded. Please try again in a moment.";
@@ -243,6 +312,7 @@ class LLMService {
 
       if (CONFIG.DEBUG.ENABLED) {
         console.log("LLM response received:", {
+          provider: CONFIG.getActiveAPIProvider(),
           model: data.model,
           usage: data.usage,
           hasChoices: !!data.choices && data.choices.length > 0,
@@ -289,10 +359,12 @@ class LLMService {
           { role: "user", content: userPrompt },
         ];
 
-        // Adjust temperature based on attempt
+        // Adjust temperature based on attempt and use appropriate model
         const temperature = attempt === 1 ? 0.3 : 0.1;
+        const model = CONFIG.getModelForTask("chunking");
 
         const response = await this.makeRequest(messages, {
+          model: model,
           temperature: temperature,
           maxTokens: 3000,
         });
@@ -305,6 +377,8 @@ class LLMService {
 
         // ALWAYS LOG THE FULL RESPONSE
         console.log(`=== FULL AI RESPONSE (ATTEMPT ${attempt}) ===`);
+        console.log("Provider:", CONFIG.getActiveAPIProvider());
+        console.log("Model:", model);
         console.log("Response length:", content.length);
         console.log("Response content:", content);
         console.log("=== END FULL RESPONSE ===");
@@ -341,7 +415,10 @@ class LLMService {
     ];
 
     try {
+      const model = CONFIG.getModelForTask("content_generation");
+
       const response = await this.makeRequest(messages, {
+        model: model,
         temperature: 0.4,
         maxTokens: 10000,
       });
@@ -354,6 +431,8 @@ class LLMService {
 
       // ALWAYS LOG CONTENT GENERATION RESPONSES
       console.log("=== CONTENT GENERATION RESPONSE ===");
+      console.log("Provider:", CONFIG.getActiveAPIProvider());
+      console.log("Model:", model);
       console.log("Chunk ID:", chunk.id);
       console.log("Slide Type:", chunk.slideType);
       console.log("Response length:", content.length);
@@ -375,83 +454,65 @@ class LLMService {
 
 IMPORTANT: You must respond using XML tags to structure your data. This format is much more reliable than JSON.
 
-For each chunk, use this EXACT format:
+Available slide types:
+- title: Title slide with course name and overview
+- courseInfo: Course information, duration, audience, objectives
+- textAndImage: Main content with supporting image
+- textAndBullets: Text content with bullet points
+- iconsWithTitles: Grid of icons with titles and descriptions
+- faq: Frequently asked questions
+- flipCards: Interactive cards that flip to reveal information
+- multipleChoice: Quiz questions with multiple choice answers
+- tabs: Tabbed content organization
+- popups: Information revealed through interactive popups
 
+Guidelines:
+1. Create 6-12 logical chunks from the source content
+2. Each chunk should cover a distinct topic or concept
+3. Choose appropriate slide types based on content structure
+4. Ensure good flow and progression through the material
+5. Include interactive elements (faq, flipCards, multipleChoice) where appropriate
+6. Balance text-heavy and visual slides
+
+Respond with your chunks wrapped in XML tags exactly like this:
+
+<chunks>
 <chunk>
-<title>Clear descriptive title</title>
-<slideType>textAndImage</slideType>
-<sourceContent>Relevant excerpt from source material</sourceContent>
-<estimatedTime>2 minutes</estimatedTime>
-<order>0</order>
+<title>Introduction to Course Topic</title>
+<slideType>title</slideType>
+<sourceContent>Relevant portion of source content for this chunk...</sourceContent>
 </chunk>
-
-Available slide types (use exactly these values):
-- textAndImage: For concepts that benefit from visual support
-- textAndBullets: For lists, steps, or key points  
-- iconsWithTitles: For 3-4 main principles or categories
-- multipleChoice: For knowledge checks and assessments
-- tabs: For comparing different approaches or roles
-- flipCards: For definitions, terms, or before/after scenarios
-- faq: For common questions and answers
-- popups: For additional resources or deep-dive information
-
-Chunking Guidelines:
-1. Create 5-8 chunks for optimal learning
-2. Each chunk should cover one main concept
-3. Include 1-2 knowledge checks (multipleChoice) every 3-4 content chunks
-4. Start with overview/introduction, end with summary
-5. Vary slide types for engagement
-6. Keep estimatedTime as "1 minutes", "2 minutes", or "3 minutes"
-7. Set order as sequential numbers: 0, 1, 2, 3, etc.
-
-Example response format:
-
 <chunk>
-<title>Introduction to Game Development</title>
-<slideType>textAndImage</slideType>
-<sourceContent>Game development combines creativity with technical skills to create interactive experiences...</sourceContent>
-<estimatedTime>2 minutes</estimatedTime>
-<order>0</order>
-</chunk>
-
-<chunk>
-<title>Key Game Design Principles</title>
+<title>Key Concepts Overview</title>
 <slideType>textAndBullets</slideType>
-<sourceContent>Essential principles include player engagement, iterative design, user feedback...</sourceContent>
-<estimatedTime>3 minutes</estimatedTime>
-<order>1</order>
+<sourceContent>Relevant portion of source content for this chunk...</sourceContent>
 </chunk>
+</chunks>
 
-Remember: Use the XML format exactly as shown. Each chunk must be wrapped in <chunk></chunk> tags with all required fields.`;
+Make sure each chunk has meaningful source content extracted from the provided material.`;
   }
 
   /**
    * Build user prompt for chunking
    */
   buildChunkingUserPrompt(courseConfig) {
-    return `Please analyze the following course information and create chunks using the XML format:
+    return `Please analyze the following course content and break it into logical chunks for eLearning slides:
 
-COURSE TITLE: ${courseConfig.title}
-
-TARGET AUDIENCE: ${courseConfig.targetAudience || "Professional learners"}
-
-ESTIMATED DURATION: ${courseConfig.estimatedDuration || "30-45 minutes"}
-
-LEARNING OBJECTIVES:
+**Course Title:** ${courseConfig.title}
+**Target Audience:** ${courseConfig.targetAudience}
+**Learning Objectives:**
 ${courseConfig.learningObjectives.map((obj) => `- ${obj}`).join("\n")}
 
-SOURCE CONTENT:
-${courseConfig.sourceContent.substring(0, 3000)}${
-      courseConfig.sourceContent.length > 3000 ? "... [content truncated]" : ""
-    }
+**Source Content:**
+${courseConfig.sourceContent}
 
-ADDITIONAL GUIDANCE:
 ${
-  courseConfig.additionalGuidance ||
-  "Create an engaging, well-structured course that meets the learning objectives."
+  courseConfig.additionalGuidance
+    ? `**Additional Guidance:** ${courseConfig.additionalGuidance}`
+    : ""
 }
 
-Please respond with 5-8 chunks using the XML format specified in the system prompt.`;
+Please create 6-12 chunks that cover this material comprehensively. Each chunk should have a clear title, appropriate slide type, and relevant source content.`;
   }
 
   /**
@@ -883,8 +944,9 @@ Please respond using the XML format specified for "${chunk.slideType}" slides.`;
       return titles.slice(0, 8).map((title, index) => ({
         id: `fallback-chunk-${Date.now()}-${index}`,
         title: title,
-        slideType: index % 4 === 3 ? "multipleChoice" : "textAndImage", // Add some variety
-        sourceContent: "Content extracted from malformed AI response",
+        slideType: index % 4 === 3 ? "multipleChoice" : "textAndImage",
+        sourceContent:
+          "Generated from parsing failure - manual editing required",
         estimatedTime: "2 minutes",
         order: index,
         isLocked: false,
@@ -894,13 +956,13 @@ Please respond using the XML format specified for "${chunk.slideType}" slides.`;
     }
 
     // Last resort: create generic chunks
-    console.warn("No titles found, creating generic fallback chunks");
+    console.warn("Creating generic fallback chunks");
     return [
       {
-        id: `fallback-chunk-${Date.now()}-0`,
+        id: `generic-chunk-${Date.now()}-1`,
         title: "Course Introduction",
-        slideType: "textAndImage",
-        sourceContent: "AI response parsing failed - please edit this chunk",
+        slideType: "title",
+        sourceContent: "Manual editing required - automatic parsing failed",
         estimatedTime: "2 minutes",
         order: 0,
         isLocked: false,
@@ -908,61 +970,16 @@ Please respond using the XML format specified for "${chunk.slideType}" slides.`;
         createdAt: new Date().toISOString(),
       },
       {
-        id: `fallback-chunk-${Date.now()}-1`,
-        title: "Main Content",
+        id: `generic-chunk-${Date.now()}-2`,
+        title: "Key Concepts",
         slideType: "textAndBullets",
-        sourceContent: "AI response parsing failed - please edit this chunk",
+        sourceContent: "Manual editing required - automatic parsing failed",
         estimatedTime: "3 minutes",
         order: 1,
         isLocked: false,
         generatedContent: null,
         createdAt: new Date().toISOString(),
       },
-      {
-        id: `fallback-chunk-${Date.now()}-2`,
-        title: "Knowledge Check",
-        slideType: "multipleChoice",
-        sourceContent: "AI response parsing failed - please edit this chunk",
-        estimatedTime: "2 minutes",
-        order: 2,
-        isLocked: false,
-        generatedContent: null,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: `fallback-chunk-${Date.now()}-3`,
-        title: "Course Summary",
-        slideType: "textAndImage",
-        sourceContent: "AI response parsing failed - please edit this chunk",
-        estimatedTime: "2 minutes",
-        order: 3,
-        isLocked: false,
-        generatedContent: null,
-        createdAt: new Date().toISOString(),
-      },
     ];
   }
-
-  /**
-   * Utility function to wait
-   */
-  async wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  /**
-   * Get service status
-   */
-  getStatus() {
-    return {
-      isReady: this.isReady,
-      apiUrl: this.apiUrl,
-      usingProxy: this.isUsingProxy(),
-      hasApiKey: !!this.apiKey,
-      extractionMethod: "XML with regex",
-    };
-  }
 }
-
-// Export for use in other modules
-window.LLMService = LLMService;
