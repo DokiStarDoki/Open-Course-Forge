@@ -1,6 +1,6 @@
 /**
- * Course Forge MVP - Content Generation Manager
- * Handles individual slide content generation and management
+ * Course Forge MVP - Content Generator
+ * Handles content generation for slides using LLM service
  */
 
 class ContentGenerator {
@@ -9,8 +9,9 @@ class ContentGenerator {
     this.eventSystem = eventSystem;
     this.llmService = llmService;
 
-    this.isProcessing = false;
-    this.currentlyGenerating = new Set(); // Track which slides are being generated
+    // Track currently generating slides to prevent duplicates
+    this.currentlyGenerating = new Set();
+    this.batchOperationId = null;
 
     this.setupEventListeners();
 
@@ -29,14 +30,6 @@ class ContentGenerator {
 
     this.eventSystem.on("content:regenerate", (data) => {
       this.regenerateSlideContent(data.chunkId);
-    });
-
-    this.eventSystem.on("content:update", (data) => {
-      this.updateSlideContent(data.chunkId, data.content);
-    });
-
-    this.eventSystem.on("content:change-type", (data) => {
-      this.changeSlideTypeAndRegenerate(data.chunkId, data.newType);
     });
 
     this.eventSystem.on("content:generate-all", () => {
@@ -58,42 +51,43 @@ class ContentGenerator {
     try {
       this.currentlyGenerating.add(chunkId);
 
-      const chunk = this.getChunkById(chunkId);
+      const chunks = this.stateManager.getState("chunks") || [];
+      const chunk = chunks.find((c) => c.id === chunkId);
+
       if (!chunk) {
         throw new Error("Chunk not found");
       }
 
-      const courseConfig = this.stateManager.getState("courseConfig");
+      if (chunk.isLocked) {
+        throw new Error("Cannot generate content for locked chunk");
+      }
 
       StatusManager.showLoading(`Generating content for "${chunk.title}"...`);
 
-      // Update chunk status to show it's being generated
-      this.updateChunkStatus(chunkId, "generating");
-
-      // Generate content using LLM
+      const courseConfig = this.stateManager.getState("courseConfig");
       const generatedContent = await this.llmService.generateSlideContent(
         chunk,
         courseConfig
       );
 
-      // Save generated content to chunk
-      this.saveGeneratedContent(chunkId, generatedContent);
-
-      // Update chunk status
-      this.updateChunkStatus(chunkId, "generated");
+      // Update chunk with generated content
+      const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
+      if (chunkIndex >= 0) {
+        chunks[chunkIndex].generatedContent = generatedContent;
+        chunks[chunkIndex].lastGenerated = new Date().toISOString();
+        this.stateManager.setState("chunks", chunks);
+      }
 
       StatusManager.showSuccess(`Content generated for "${chunk.title}"`);
 
       this.eventSystem.emit("content:generated", {
         chunkId,
-        content: generatedContent,
         slideType: chunk.slideType,
+        content: generatedContent,
       });
     } catch (error) {
-      console.error("Content generation failed:", error);
-      StatusManager.showError(`Failed to generate content: ${error.message}`);
-
-      this.updateChunkStatus(chunkId, "error");
+      console.error(`Content generation failed for ${chunkId}:`, error);
+      StatusManager.showError(`Generation failed: ${error.message}`);
 
       this.eventSystem.emit("content:generation-failed", {
         chunkId,
@@ -101,306 +95,168 @@ class ContentGenerator {
       });
     } finally {
       this.currentlyGenerating.delete(chunkId);
-      StatusManager.hide();
     }
   }
 
   /**
-   * Regenerate content for an existing slide
+   * Regenerate content for a specific slide
    */
   async regenerateSlideContent(chunkId) {
-    const chunk = this.getChunkById(chunkId);
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
     if (!chunk) {
       StatusManager.showError("Chunk not found");
       return;
     }
 
-    if (chunk.generatedContent) {
-      const confirmed = confirm(
-        `Regenerate content for "${chunk.title}"? This will replace the existing content.`
-      );
-      if (!confirmed) return;
+    if (chunk.isLocked) {
+      StatusManager.showWarning("Cannot regenerate content for locked chunk");
+      return;
+    }
+
+    const confirmed = confirm(
+      `Regenerate content for "${chunk.title}"? This will replace the existing content.`
+    );
+    if (!confirmed) return;
+
+    // Clear existing content and regenerate
+    const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
+    if (chunkIndex >= 0) {
+      chunks[chunkIndex].generatedContent = null;
+      this.stateManager.setState("chunks", chunks);
     }
 
     await this.generateSlideContent(chunkId);
   }
 
   /**
-   * Change slide type and regenerate content
-   */
-  async changeSlideTypeAndRegenerate(chunkId, newType) {
-    try {
-      const chunk = this.getChunkById(chunkId);
-      if (!chunk) {
-        throw new Error("Chunk not found");
-      }
-
-      const oldType = chunk.slideType;
-
-      // Update slide type
-      this.updateChunkSlideType(chunkId, newType);
-
-      // If there's existing content, ask if they want to regenerate
-      if (chunk.generatedContent) {
-        const shouldRegenerate = confirm(
-          `Slide type changed from ${this.getSlideTypeLabel(
-            oldType
-          )} to ${this.getSlideTypeLabel(
-            newType
-          )}. Regenerate content to match the new type?`
-        );
-
-        if (shouldRegenerate) {
-          await this.generateSlideContent(chunkId);
-        } else {
-          // Clear the existing content since it doesn't match the new type
-          this.clearGeneratedContent(chunkId);
-          StatusManager.showInfo(
-            "Slide type changed. Generate new content when ready."
-          );
-        }
-      } else {
-        StatusManager.showInfo(
-          `Slide type changed to ${this.getSlideTypeLabel(newType)}`
-        );
-      }
-    } catch (error) {
-      console.error("Slide type change failed:", error);
-      StatusManager.showError(`Failed to change slide type: ${error.message}`);
-    }
-  }
-
-  /**
-   * Generate content for all slides that don't have content
+   * Generate content for all slides
    */
   async generateAllContent() {
     const chunks = this.stateManager.getState("chunks") || [];
-    const chunksNeedingContent = chunks.filter(
+    const pendingChunks = chunks.filter(
       (chunk) => !chunk.generatedContent && !chunk.isLocked
     );
 
-    if (chunksNeedingContent.length === 0) {
-      StatusManager.showInfo("All chunks already have generated content");
+    if (pendingChunks.length === 0) {
+      StatusManager.showInfo("All slides already have content or are locked");
       return;
     }
 
     const confirmed = confirm(
-      `Generate content for ${chunksNeedingContent.length} slides? This may take a few minutes.`
+      `Generate content for ${pendingChunks.length} slides? This may take several minutes.`
     );
-
     if (!confirmed) return;
 
-    StatusManager.showLoading("Generating content for all slides...");
+    // Start batch operation
+    this.batchOperationId = `batch-${Date.now()}`;
+    StatusManager.startBatchOperation(
+      this.batchOperationId,
+      `Generating content for ${pendingChunks.length} slides...`
+    );
 
     let successCount = 0;
     let errorCount = 0;
+    const errors = [];
 
-    for (let i = 0; i < chunksNeedingContent.length; i++) {
-      const chunk = chunksNeedingContent[i];
-      const progress = ((i + 1) / chunksNeedingContent.length) * 100;
-
-      StatusManager.showProgress(
-        `Generating content for "${chunk.title}"`,
-        progress
-      );
+    for (let i = 0; i < pendingChunks.length; i++) {
+      const chunk = pendingChunks[i];
 
       try {
+        // Show progress
+        StatusManager.addBatchMessage(
+          this.batchOperationId,
+          `Generating "${chunk.title}" (${i + 1}/${pendingChunks.length})`,
+          `progress-${i}`
+        );
+
         await this.generateSlideContent(chunk.id);
         successCount++;
 
-        // Small delay between generations to avoid rate limiting
-        if (i < chunksNeedingContent.length - 1) {
-          await this.wait(1000);
+        // Add delay between generations to avoid rate limiting
+        if (i < pendingChunks.length - 1) {
+          await this.delay(1000);
         }
       } catch (error) {
-        console.error(
-          `Failed to generate content for chunk ${chunk.id}:`,
-          error
-        );
         errorCount++;
+        errors.push({
+          chunkTitle: chunk.title,
+          error: error.message,
+        });
+        console.error(`Failed to generate content for ${chunk.title}:`, error);
       }
     }
 
-    StatusManager.showSuccess(
-      `Content generation complete! Success: ${successCount}, Errors: ${errorCount}`
+    // Complete batch operation
+    const completionMessage = `Content generation complete! ${successCount} successful${
+      errorCount > 0 ? `, ${errorCount} failed` : ""
+    }`;
+    const completionType = errorCount > 0 ? "warning" : "success";
+
+    StatusManager.completeBatchOperation(
+      this.batchOperationId,
+      completionMessage,
+      completionType
     );
+
+    // Log detailed errors if any
+    if (errors.length > 0) {
+      console.warn("Content generation errors:", errors);
+    }
+
+    this.eventSystem.emit("content:batch-generated", {
+      total: pendingChunks.length,
+      successful: successCount,
+      failed: errorCount,
+      errors: errors,
+    });
   }
 
   /**
-   * Update slide content manually
+   * Change slide type and regenerate content
    */
-  updateSlideContent(chunkId, newContent) {
+  async changeSlideTypeAndRegenerate(chunkId, newSlideType) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
+
+    if (chunkIndex < 0) {
+      StatusManager.showError("Chunk not found");
+      return;
+    }
+
+    const chunk = chunks[chunkIndex];
+    if (chunk.isLocked) {
+      StatusManager.showWarning("Cannot change slide type for locked chunk");
+      return;
+    }
+
+    const oldType = chunk.slideType;
+
     try {
-      this.saveGeneratedContent(chunkId, newContent);
-      this.updateChunkStatus(chunkId, "generated");
+      StatusManager.showLoading(`Changing slide type to ${newSlideType}...`);
 
-      StatusManager.showSuccess("Content updated");
+      // Update slide type and clear content
+      chunks[chunkIndex].slideType = newSlideType;
+      chunks[chunkIndex].generatedContent = null;
+      this.stateManager.setState("chunks", chunks);
 
-      this.eventSystem.emit("content:updated", {
+      // Regenerate content with new type
+      await this.generateSlideContent(chunkId);
+
+      this.eventSystem.emit("content:type-changed", {
         chunkId,
-        content: newContent,
+        oldType,
+        newType: newSlideType,
       });
     } catch (error) {
-      console.error("Content update failed:", error);
-      StatusManager.showError(`Failed to update content: ${error.message}`);
+      console.error("Failed to change slide type:", error);
+      StatusManager.showError(`Failed to change slide type: ${error.message}`);
+
+      // Revert slide type on error
+      chunks[chunkIndex].slideType = oldType;
+      this.stateManager.setState("chunks", chunks);
     }
-  }
-
-  /**
-   * Get chunk by ID
-   */
-  getChunkById(chunkId) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const targetId = String(chunkId);
-    return chunks.find((chunk) => String(chunk.id) === targetId);
-  }
-
-  /**
-   * Save generated content to chunk
-   */
-  saveGeneratedContent(chunkId, content) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const targetId = String(chunkId);
-    const chunkIndex = chunks.findIndex(
-      (chunk) => String(chunk.id) === targetId
-    );
-
-    if (chunkIndex < 0) {
-      throw new Error("Chunk not found");
-    }
-
-    chunks[chunkIndex].generatedContent = content;
-    chunks[chunkIndex].lastGenerated = new Date().toISOString();
-
-    this.stateManager.setState("chunks", chunks);
-  }
-
-  /**
-   * Clear generated content from chunk
-   */
-  clearGeneratedContent(chunkId) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const targetId = String(chunkId);
-    const chunkIndex = chunks.findIndex(
-      (chunk) => String(chunk.id) === targetId
-    );
-
-    if (chunkIndex < 0) {
-      throw new Error("Chunk not found");
-    }
-
-    chunks[chunkIndex].generatedContent = null;
-    chunks[chunkIndex].lastGenerated = null;
-
-    this.stateManager.setState("chunks", chunks);
-  }
-
-  /**
-   * Update chunk status
-   */
-  updateChunkStatus(chunkId, status) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const targetId = String(chunkId);
-    const chunkIndex = chunks.findIndex(
-      (chunk) => String(chunk.id) === targetId
-    );
-
-    if (chunkIndex < 0) return;
-
-    chunks[chunkIndex].status = status;
-    this.stateManager.setState("chunks", chunks);
-
-    this.eventSystem.emit("chunk:status-updated", { chunkId, status });
-  }
-
-  /**
-   * Update chunk slide type
-   */
-  updateChunkSlideType(chunkId, newType) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const targetId = String(chunkId);
-    const chunkIndex = chunks.findIndex(
-      (chunk) => String(chunk.id) === targetId
-    );
-
-    if (chunkIndex < 0) {
-      throw new Error("Chunk not found");
-    }
-
-    const oldType = chunks[chunkIndex].slideType;
-    chunks[chunkIndex].slideType = newType;
-
-    this.stateManager.setState("chunks", chunks);
-
-    this.eventSystem.emit("chunk:type-changed", {
-      chunkId,
-      oldType,
-      newType,
-    });
-  }
-
-  /**
-   * Get slide type label
-   */
-  getSlideTypeLabel(slideType) {
-    const slideTypeMap = new Map(
-      CONFIG.SLIDE_TYPES.map((type) => [type.value, type.label])
-    );
-    return slideTypeMap.get(slideType) || slideType;
-  }
-
-  /**
-   * Validate generated content structure
-   */
-  validateGeneratedContent(content, slideType) {
-    // This would contain validation logic for different slide types
-    // For now, just check if content exists
-    return content && typeof content === "object";
-  }
-
-  /**
-   * Get content statistics
-   */
-  getContentStats() {
-    const chunks = this.stateManager.getState("chunks") || [];
-
-    return {
-      total: chunks.length,
-      generated: chunks.filter((chunk) => chunk.generatedContent).length,
-      pending: chunks.filter(
-        (chunk) => !chunk.generatedContent && !chunk.isLocked
-      ).length,
-      locked: chunks.filter((chunk) => chunk.isLocked).length,
-      generating: this.currentlyGenerating.size,
-      byType: this.getContentStatsByType(chunks),
-    };
-  }
-
-  /**
-   * Get content statistics by slide type
-   */
-  getContentStatsByType(chunks) {
-    const stats = {};
-
-    chunks.forEach((chunk) => {
-      if (!stats[chunk.slideType]) {
-        stats[chunk.slideType] = {
-          total: 0,
-          generated: 0,
-          pending: 0,
-        };
-      }
-
-      stats[chunk.slideType].total++;
-
-      if (chunk.generatedContent) {
-        stats[chunk.slideType].generated++;
-      } else {
-        stats[chunk.slideType].pending++;
-      }
-    });
-
-    return stats;
   }
 
   /**
@@ -410,35 +266,146 @@ class ContentGenerator {
     const chunks = this.stateManager.getState("chunks") || [];
     const courseConfig = this.stateManager.getState("courseConfig");
 
-    const exportData = {
+    const generatedChunks = chunks.filter((chunk) => chunk.generatedContent);
+
+    if (generatedChunks.length === 0) {
+      StatusManager.showWarning("No generated content to export");
+      return null;
+    }
+
+    return {
+      version: "1.0",
+      exportedAt: new Date().toISOString(),
       course: {
         title: courseConfig.title,
         targetAudience: courseConfig.targetAudience,
         estimatedDuration: courseConfig.estimatedDuration,
         learningObjectives: courseConfig.learningObjectives,
       },
-      slides: chunks.map((chunk) => ({
+      slides: generatedChunks.map((chunk) => ({
         id: chunk.id,
         title: chunk.title,
         slideType: chunk.slideType,
         order: chunk.order,
-        estimatedTime: chunk.estimatedTime,
         content: chunk.generatedContent,
-        sourceContent: chunk.sourceContent,
+        estimatedTime: chunk.estimatedTime,
         isLocked: chunk.isLocked,
         lastGenerated: chunk.lastGenerated,
       })),
-      exportedAt: new Date().toISOString(),
-      stats: this.getContentStats(),
+      stats: {
+        totalSlides: generatedChunks.length,
+        generatedSlides: generatedChunks.length,
+        slideTypes: this.getSlideTypeStats(generatedChunks),
+      },
     };
-
-    return exportData;
   }
 
   /**
-   * Utility function to wait
+   * Get slide type statistics
    */
-  async wait(ms) {
+  getSlideTypeStats(chunks) {
+    const stats = {};
+    chunks.forEach((chunk) => {
+      stats[chunk.slideType] = (stats[chunk.slideType] || 0) + 1;
+    });
+    return stats;
+  }
+
+  /**
+   * Get generation statistics
+   */
+  getGenerationStats() {
+    const chunks = this.stateManager.getState("chunks") || [];
+
+    return {
+      total: chunks.length,
+      generated: chunks.filter((chunk) => chunk.generatedContent).length,
+      pending: chunks.filter(
+        (chunk) => !chunk.generatedContent && !chunk.isLocked
+      ).length,
+      locked: chunks.filter((chunk) => chunk.isLocked).length,
+      currentlyGenerating: this.currentlyGenerating.size,
+      slideTypes: this.getSlideTypeStats(
+        chunks.filter((chunk) => chunk.generatedContent)
+      ),
+    };
+  }
+
+  /**
+   * Validate content before generation
+   */
+  validateForGeneration() {
+    const courseConfig = this.stateManager.getState("courseConfig");
+    const chunks = this.stateManager.getState("chunks") || [];
+
+    const validation = {
+      isValid: true,
+      errors: [],
+      warnings: [],
+    };
+
+    if (!courseConfig.title) {
+      validation.errors.push("Course title is required");
+      validation.isValid = false;
+    }
+
+    if (
+      !courseConfig.learningObjectives ||
+      courseConfig.learningObjectives.length === 0
+    ) {
+      validation.errors.push("Learning objectives are required");
+      validation.isValid = false;
+    }
+
+    if (!courseConfig.sourceContent) {
+      validation.errors.push("Source content is required");
+      validation.isValid = false;
+    }
+
+    if (chunks.length === 0) {
+      validation.errors.push("No chunks available for generation");
+      validation.isValid = false;
+    }
+
+    if (!this.llmService || !this.llmService.isReady) {
+      validation.errors.push("AI service is not ready");
+      validation.isValid = false;
+    }
+
+    return validation;
+  }
+
+  /**
+   * Cancel all ongoing generation
+   */
+  cancelAllGeneration() {
+    if (this.currentlyGenerating.size > 0) {
+      const cancelled = Array.from(this.currentlyGenerating);
+      this.currentlyGenerating.clear();
+
+      if (this.batchOperationId) {
+        StatusManager.completeBatchOperation(
+          this.batchOperationId,
+          "Content generation cancelled",
+          "warning"
+        );
+        this.batchOperationId = null;
+      }
+
+      StatusManager.showWarning(
+        `Cancelled generation for ${cancelled.length} slides`
+      );
+
+      this.eventSystem.emit("content:generation-cancelled", {
+        cancelledChunks: cancelled,
+      });
+    }
+  }
+
+  /**
+   * Utility delay function
+   */
+  async delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
@@ -447,10 +414,23 @@ class ContentGenerator {
    */
   getProcessingStatus() {
     return {
-      isProcessing: this.isProcessing,
-      currentlyGenerating: Array.from(this.currentlyGenerating),
-      canGenerate: this.llmService && this.llmService.isReady,
+      isGenerating: this.currentlyGenerating.size > 0,
+      generatingCount: this.currentlyGenerating.size,
+      generatingChunks: Array.from(this.currentlyGenerating),
+      hasBatchOperation: !!this.batchOperationId,
+      batchOperationId: this.batchOperationId,
     };
+  }
+
+  /**
+   * Cleanup resources
+   */
+  cleanup() {
+    this.cancelAllGeneration();
+    this.currentlyGenerating.clear();
+    this.batchOperationId = null;
+
+    console.log("ContentGenerator cleaned up");
   }
 }
 

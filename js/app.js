@@ -383,23 +383,71 @@ class CourseForgeApp {
   }
 
   /**
-   * Export course as HTML
+   * Export course as HTML (FIXED VERSION)
    */
   exportCourseHtml() {
-    if (!this.contentGenerator) {
-      StatusManager.showError("Content generator not initialized");
+    console.log("=== EXPORTING COURSE HTML ===");
+
+    // Get course data in the correct format
+    const chunks = this.stateManager.getState("chunks") || [];
+    const courseConfig = this.stateManager.getState("courseConfig");
+
+    console.log("Chunks found:", chunks.length);
+    console.log(
+      "Chunks with content:",
+      chunks.filter((c) => c.generatedContent).length
+    );
+
+    // Filter to only chunks with generated content
+    const chunksWithContent = chunks.filter((chunk) => chunk.generatedContent);
+
+    if (chunksWithContent.length === 0) {
+      StatusManager.showError(
+        "No generated content to export. Please generate some slides first."
+      );
       return;
     }
 
-    const courseData = this.contentGenerator.exportGeneratedContent();
+    // Convert chunks to the format expected by HTMLExporter
+    const courseData = {
+      course: {
+        title: courseConfig.title || "Course Title",
+        targetAudience: courseConfig.targetAudience || "",
+        estimatedDuration: courseConfig.estimatedDuration || "",
+        learningObjectives: courseConfig.learningObjectives || [],
+      },
+      slides: chunksWithContent.map((chunk) => ({
+        id: chunk.id,
+        title: chunk.title,
+        slideType: chunk.slideType,
+        order: chunk.order,
+        content: chunk.generatedContent, // This is the key fix!
+        estimatedTime: chunk.estimatedTime,
+        isLocked: chunk.isLocked,
+        lastGenerated: chunk.lastGenerated,
+      })),
+      exportedAt: new Date().toISOString(),
+      stats: {
+        totalSlides: chunksWithContent.length,
+        generatedSlides: chunksWithContent.length,
+      },
+    };
+
+    console.log("Course data for export:", courseData);
+    console.log("Sample slide content:", courseData.slides[0]?.content);
+
+    // Create HTML exporter and generate HTML
     const htmlExporter = new HTMLExporter();
     const htmlContent = htmlExporter.generateCourseHtml(courseData);
 
+    // Download the file
     const timestamp = new Date().toISOString().slice(0, 10);
     const filename = `course-${timestamp}.html`;
 
     FileProcessor.downloadAsFile(htmlContent, filename, "text/html");
     StatusManager.showSuccess("Course exported as HTML");
+
+    console.log("=== HTML EXPORT COMPLETE ===");
   }
 
   /**
