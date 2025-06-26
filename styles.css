@@ -1058,6 +1058,8 @@ body {
 /* ===== BUTTONS ===== */
 .btn {
   padding: 0.75rem 1.5rem;
+  margin-left: 2px;
+  margin-right: 2px;
   border-radius: 0.5rem;
   font-weight: 500;
   cursor: pointer;
@@ -1068,7 +1070,6 @@ body {
   border: none;
   font-size: 0.875rem;
   text-decoration: none;
-  width: 45%;
 }
 
 .btn-primary {
@@ -2057,4 +2058,110 @@ body {
   font-size: 0.875rem;
   font-weight: 500;
   z-index: 11;
+}
+
+/* ===== DROPDOWN MENU STYLES ===== */
+/* Base dropdown menu styles - HIDDEN BY DEFAULT */
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  padding: 0.5rem 0;
+  min-width: 180px;
+  z-index: 1000;
+  /* CRUCIAL: Hidden by default */
+  display: none;
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
+  transition: all 0.2s ease;
+}
+
+/* Show state - makes dropdown visible */
+.dropdown-menu.show {
+  display: block;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Dropdown buttons */
+.dropdown-menu button {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: none;
+  color: #374151;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dropdown-menu button:hover:not(:disabled) {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.dropdown-menu button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: #9ca3af;
+}
+
+.dropdown-menu button.danger {
+  color: #ef4444;
+}
+
+.dropdown-menu button.danger:hover:not(:disabled) {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+/* Dropdown separators */
+.dropdown-menu hr {
+  margin: 0.5rem 0;
+  border: none;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Dropdown toggle button styles */
+.dropdown-toggle {
+  position: relative;
+}
+
+/* Generation actions dropdown container */
+.generation-actions-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+/* Chunk actions dropdown container */
+.chunk-actions-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+/* Ensure proper stacking context for dropdowns */
+.generation-item {
+  position: relative;
+}
+
+.chunk-item {
+  position: relative;
+}
+
+/* Mobile responsive dropdown */
+@media (max-width: 768px) {
+  .dropdown-menu {
+    left: 0;
+    right: auto;
+    min-width: 200px;
+  }
 }
