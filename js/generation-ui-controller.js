@@ -1,6 +1,6 @@
 /**
- * Course Forge MVP - Generation UI Controller
- * Handles content generation display, interaction, and UI management
+ * Course Forge MVP - Generation UI Controller (FIXED INLINE EDITING)
+ * Handles content generation display, interaction, and UI management with working inline editing
  */
 
 class GenerationUIController {
@@ -9,11 +9,13 @@ class GenerationUIController {
     this.eventSystem = eventSystem;
     this.contentGenerator = contentGenerator;
     this.eventHandlers = new Map();
+    this.editingSession = new Map(); // Track editing sessions
+    this.unsavedChanges = new Set(); // Track chunks with unsaved changes
 
     this.setupEventListeners();
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log("GenerationUIController initialized");
+      console.log("GenerationUIController initialized with inline editing");
     }
   }
 
@@ -41,7 +43,7 @@ class GenerationUIController {
   }
 
   /**
-   * Update generation UI
+   * Update generation UI with inline editing support
    */
   updateGenerationUI() {
     const container = document.getElementById("generationContainer");
@@ -55,11 +57,531 @@ class GenerationUIController {
       this.renderGenerationView(container, chunks);
     }
 
+    // Setup inline editing after UI update
+    this.setupInlineEditing();
+
     // Reinitialize icons
     if (typeof lucide !== "undefined") {
       lucide.createIcons();
     }
   }
+
+  /**
+   * Setup inline editing for all contenteditable elements
+   */
+  setupInlineEditing() {
+    // Remove existing handlers
+    this.cleanupEditingHandlers();
+
+    // Find all contenteditable elements
+    const editableElements = document.querySelectorAll(
+      '[contenteditable="true"][data-field]'
+    );
+
+    editableElements.forEach((element) => {
+      this.setupElementEditing(element);
+    });
+
+    // Setup image URL inputs
+    const imageInputs = document.querySelectorAll(
+      "input.image-url-input[data-field]"
+    );
+    imageInputs.forEach((input) => {
+      this.setupImageInputEditing(input);
+    });
+
+    // Setup select elements (like correct answer selectors)
+    const selectElements = document.querySelectorAll("select[data-field]");
+    selectElements.forEach((select) => {
+      this.setupSelectEditing(select);
+    });
+
+    console.log(`Setup inline editing for ${editableElements.length} elements`);
+  }
+
+  /**
+   * Setup editing for a specific element
+   */
+  setupElementEditing(element) {
+    const chunkId = this.findChunkIdForElement(element);
+    const field = element.dataset.field;
+
+    if (!chunkId || !field) {
+      console.warn("Element missing chunk ID or field:", element);
+      return;
+    }
+
+    // Store original content
+    const originalContent = element.innerHTML || element.textContent || "";
+
+    // Input event for real-time changes
+    const inputHandler = (e) => {
+      this.handleElementInput(chunkId, field, element, e);
+    };
+
+    // Focus event
+    const focusHandler = (e) => {
+      this.handleElementFocus(chunkId, field, element, e);
+    };
+
+    // Blur event for saving
+    const blurHandler = (e) => {
+      this.handleElementBlur(chunkId, field, element, e);
+    };
+
+    // Keydown for shortcuts
+    const keydownHandler = (e) => {
+      this.handleElementKeydown(chunkId, field, element, e);
+    };
+
+    element.addEventListener("input", inputHandler);
+    element.addEventListener("focus", focusHandler);
+    element.addEventListener("blur", blurHandler);
+    element.addEventListener("keydown", keydownHandler);
+
+    // Store handlers for cleanup
+    const handlerKey = `${chunkId}-${field}-${Date.now()}`;
+    this.eventHandlers.set(handlerKey, {
+      element,
+      handlers: [
+        { event: "input", handler: inputHandler },
+        { event: "focus", handler: focusHandler },
+        { event: "blur", handler: blurHandler },
+        { event: "keydown", handler: keydownHandler },
+      ],
+    });
+
+    // Store original content
+    element.dataset.originalContent = originalContent;
+  }
+
+  /**
+   * Setup editing for image URL inputs
+   */
+  setupImageInputEditing(input) {
+    const chunkId = this.findChunkIdForElement(input);
+    const field = input.dataset.field;
+
+    if (!chunkId || !field) return;
+
+    const changeHandler = (e) => {
+      const newUrl = e.target.value;
+      this.updateChunkContent(chunkId, field, newUrl);
+
+      // Update the image element if it exists
+      const imageElement = input.parentElement.querySelector(".slide-image");
+      if (imageElement) {
+        imageElement.src = newUrl;
+      }
+
+      this.markChunkAsModified(chunkId);
+    };
+
+    input.addEventListener("change", changeHandler);
+    input.addEventListener("blur", changeHandler);
+
+    const handlerKey = `${chunkId}-${field}-input-${Date.now()}`;
+    this.eventHandlers.set(handlerKey, {
+      element: input,
+      handlers: [
+        { event: "change", handler: changeHandler },
+        { event: "blur", handler: changeHandler },
+      ],
+    });
+  }
+
+  /**
+   * Setup editing for select elements
+   */
+  setupSelectEditing(select) {
+    const chunkId = this.findChunkIdForElement(select);
+    const field = select.dataset.field;
+
+    if (!chunkId || !field) return;
+
+    const changeHandler = (e) => {
+      let value = e.target.value;
+
+      // Convert to number if it's correctAnswer field
+      if (field === "correctAnswer") {
+        value = parseInt(value, 10);
+      }
+
+      this.updateChunkContent(chunkId, field, value);
+      this.markChunkAsModified(chunkId);
+    };
+
+    select.addEventListener("change", changeHandler);
+
+    const handlerKey = `${chunkId}-${field}-select-${Date.now()}`;
+    this.eventHandlers.set(handlerKey, {
+      element: select,
+      handlers: [{ event: "change", handler: changeHandler }],
+    });
+  }
+
+  /**
+   * Handle element input (real-time changes)
+   */
+  handleElementInput(chunkId, field, element, event) {
+    // Visual feedback for changes
+    element.classList.add("editing");
+
+    // Mark as modified
+    this.markChunkAsModified(chunkId);
+
+    // Auto-save after delay
+    this.debounceAutoSave(chunkId, field, element);
+  }
+
+  /**
+   * Handle element focus
+   */
+  handleElementFocus(chunkId, field, element, event) {
+    element.classList.add("focused");
+
+    // Start editing session
+    this.editingSession.set(`${chunkId}-${field}`, {
+      element,
+      startTime: Date.now(),
+      originalContent: element.dataset.originalContent,
+    });
+
+    // Show editing toolbar if needed
+    this.showEditingToolbar(element);
+  }
+
+  /**
+   * Handle element blur (save changes)
+   */
+  handleElementBlur(chunkId, field, element, event) {
+    element.classList.remove("focused", "editing");
+
+    const content = this.getElementContent(element);
+    this.updateChunkContent(chunkId, field, content);
+
+    // End editing session
+    this.editingSession.delete(`${chunkId}-${field}`);
+
+    // Hide editing toolbar
+    this.hideEditingToolbar();
+
+    // Save changes
+    this.saveChunkChanges(chunkId);
+  }
+
+  /**
+   * Handle keydown events (shortcuts)
+   */
+  handleElementKeydown(chunkId, field, element, event) {
+    // Ctrl+S / Cmd+S to save
+    if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+      event.preventDefault();
+      this.saveChunkChanges(chunkId);
+      StatusManager.showSuccess("Changes saved");
+      return;
+    }
+
+    // Escape to cancel
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.cancelEditing(chunkId, field, element);
+      return;
+    }
+
+    // Enter behavior for different field types
+    if (event.key === "Enter") {
+      if (field.includes("title") || field.includes("header")) {
+        // Single-line fields: blur on Enter
+        event.preventDefault();
+        element.blur();
+      }
+      // Multi-line fields: allow normal Enter behavior
+    }
+  }
+
+  /**
+   * Get content from element based on its type
+   */
+  getElementContent(element) {
+    if (element.tagName === "INPUT") {
+      return element.value;
+    } else if (element.tagName === "SELECT") {
+      return element.value;
+    } else {
+      // For contenteditable elements, return text content for most fields
+      // except for rich content where we might want HTML
+      return element.textContent || "";
+    }
+  }
+
+  /**
+   * Update chunk content in state
+   */
+  updateChunkContent(chunkId, field, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
+
+    if (chunkIndex < 0) {
+      console.error(`Chunk not found: ${chunkId}`);
+      return;
+    }
+
+    const chunk = chunks[chunkIndex];
+    if (!chunk.generatedContent) {
+      console.warn(`No generated content to update for chunk: ${chunkId}`);
+      return;
+    }
+
+    // Update the content using dot notation
+    this.setNestedValue(chunk.generatedContent, field, value);
+
+    // Update the chunk in state
+    chunks[chunkIndex] = chunk;
+    this.stateManager.setState("chunks", chunks);
+
+    console.log(`Updated ${field} for chunk ${chunkId}:`, value);
+  }
+
+  /**
+   * Set nested value using dot notation (e.g., "bullets.0", "icons.1.title")
+   */
+  setNestedValue(obj, path, value) {
+    const keys = path.split(".");
+    let current = obj;
+
+    for (let i = 0; i < keys.length - 1; i++) {
+      const key = keys[i];
+
+      if (!current[key]) {
+        // Create array if next key is numeric, object otherwise
+        const nextKey = keys[i + 1];
+        current[key] = /^\d+$/.test(nextKey) ? [] : {};
+      }
+
+      current = current[key];
+    }
+
+    const lastKey = keys[keys.length - 1];
+    current[lastKey] = value;
+  }
+
+  /**
+   * Mark chunk as modified
+   */
+  markChunkAsModified(chunkId) {
+    this.unsavedChanges.add(chunkId);
+
+    // Visual feedback
+    const chunkElement = document.querySelector(`[data-chunk-id="${chunkId}"]`);
+    if (chunkElement) {
+      chunkElement.classList.add("modified");
+    }
+
+    // Update status
+    this.updateModificationStatus();
+  }
+
+  /**
+   * Save changes for a specific chunk
+   */
+  saveChunkChanges(chunkId) {
+    if (!this.unsavedChanges.has(chunkId)) {
+      return; // No changes to save
+    }
+
+    // Remove from unsaved changes
+    this.unsavedChanges.delete(chunkId);
+
+    // Visual feedback
+    const chunkElement = document.querySelector(`[data-chunk-id="${chunkId}"]`);
+    if (chunkElement) {
+      chunkElement.classList.remove("modified");
+      chunkElement.classList.add("saved");
+
+      setTimeout(() => {
+        chunkElement.classList.remove("saved");
+      }, 2000);
+    }
+
+    // Update modification status
+    this.updateModificationStatus();
+
+    // Emit event
+    this.eventSystem.emit("content:manually-updated", { chunkId });
+  }
+
+  /**
+   * Save all changes
+   */
+  saveAllChanges() {
+    const modifiedChunks = Array.from(this.unsavedChanges);
+
+    modifiedChunks.forEach((chunkId) => {
+      this.saveChunkChanges(chunkId);
+    });
+
+    if (modifiedChunks.length > 0) {
+      StatusManager.showSuccess(
+        `Saved changes to ${modifiedChunks.length} slides`
+      );
+    }
+  }
+
+  /**
+   * Cancel editing for an element
+   */
+  cancelEditing(chunkId, field, element) {
+    const session = this.editingSession.get(`${chunkId}-${field}`);
+    if (session) {
+      // Restore original content
+      if (element.tagName === "INPUT") {
+        element.value = session.originalContent;
+      } else {
+        element.innerHTML = session.originalContent;
+      }
+
+      element.blur();
+    }
+  }
+
+  /**
+   * Debounced auto-save
+   */
+  debounceAutoSave(chunkId, field, element) {
+    const key = `${chunkId}-${field}`;
+
+    // Clear existing timeout
+    if (this.autoSaveTimeouts && this.autoSaveTimeouts[key]) {
+      clearTimeout(this.autoSaveTimeouts[key]);
+    }
+
+    if (!this.autoSaveTimeouts) {
+      this.autoSaveTimeouts = {};
+    }
+
+    // Set new timeout
+    this.autoSaveTimeouts[key] = setTimeout(() => {
+      const content = this.getElementContent(element);
+      this.updateChunkContent(chunkId, field, content);
+      delete this.autoSaveTimeouts[key];
+    }, 1000); // Save after 1 second of inactivity
+  }
+
+  /**
+   * Find chunk ID for an element
+   */
+  findChunkIdForElement(element) {
+    // Walk up the DOM to find the chunk container
+    let current = element;
+    while (current && current !== document.body) {
+      if (current.dataset && current.dataset.chunkId) {
+        return current.dataset.chunkId;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  /**
+   * Show editing toolbar
+   */
+  showEditingToolbar(element) {
+    // Create toolbar if it doesn't exist
+    let toolbar = document.getElementById("editing-toolbar");
+    if (!toolbar) {
+      toolbar = document.createElement("div");
+      toolbar.id = "editing-toolbar";
+      toolbar.className = "editing-toolbar";
+      toolbar.innerHTML = `
+        <div class="toolbar-content">
+          <button class="toolbar-btn" onclick="generationUIController.saveAllChanges()">
+            <i data-lucide="save"></i> Save All
+          </button>
+          <button class="toolbar-btn" onclick="generationUIController.discardAllChanges()">
+            <i data-lucide="x"></i> Discard
+          </button>
+          <span class="toolbar-status" id="toolbar-status"></span>
+        </div>
+      `;
+      document.body.appendChild(toolbar);
+    }
+
+    toolbar.classList.add("visible");
+    this.updateToolbarPosition(element);
+  }
+
+  /**
+   * Hide editing toolbar
+   */
+  hideEditingToolbar() {
+    const toolbar = document.getElementById("editing-toolbar");
+    if (toolbar && this.editingSession.size === 0) {
+      toolbar.classList.remove("visible");
+    }
+  }
+
+  /**
+   * Update toolbar position
+   */
+  updateToolbarPosition(element) {
+    const toolbar = document.getElementById("editing-toolbar");
+    if (!toolbar) return;
+
+    const rect = element.getBoundingClientRect();
+    const toolbarHeight = 50;
+
+    let top = rect.top - toolbarHeight - 10;
+    if (top < 10) {
+      top = rect.bottom + 10;
+    }
+
+    toolbar.style.top = `${top}px`;
+    toolbar.style.left = `${Math.min(rect.left, window.innerWidth - 300)}px`;
+  }
+
+  /**
+   * Update modification status
+   */
+  updateModificationStatus() {
+    const status = document.getElementById("toolbar-status");
+    if (status) {
+      const count = this.unsavedChanges.size;
+      if (count > 0) {
+        status.textContent = `${count} unsaved change${count > 1 ? "s" : ""}`;
+        status.className = "toolbar-status unsaved";
+      } else {
+        status.textContent = "All changes saved";
+        status.className = "toolbar-status saved";
+      }
+    }
+  }
+
+  /**
+   * Discard all changes
+   */
+  discardAllChanges() {
+    const confirmed = confirm("Discard all unsaved changes?");
+    if (!confirmed) return;
+
+    this.unsavedChanges.clear();
+    this.updateGenerationUI(); // Refresh to original state
+    StatusManager.showInfo("Changes discarded");
+  }
+
+  /**
+   * Clean up editing handlers
+   */
+  cleanupEditingHandlers() {
+    this.eventHandlers.forEach(({ element, handlers }) => {
+      handlers.forEach(({ event, handler }) => {
+        element.removeEventListener(event, handler);
+      });
+    });
+    this.eventHandlers.clear();
+  }
+
+  // ... (rest of the existing methods remain the same)
 
   /**
    * Render empty state
@@ -99,6 +621,10 @@ class GenerationUIController {
           <button class="btn btn-primary" onclick="generationUIController.generateAllContent()">
             <i data-lucide="sparkles"></i>
             Generate All Content
+          </button>
+          <button class="btn btn-success" onclick="generationUIController.saveAllChanges()" id="saveAllBtn" disabled>
+            <i data-lucide="save"></i>
+            Save All Changes
           </button>
         </div>
       </div>
@@ -268,11 +794,6 @@ class GenerationUIController {
                 <i data-lucide="more-horizontal"></i>
               </button>
               <div class="dropdown-menu" id="gen-actions-${chunk.id}">
-                <button onclick="generationUIController.editSlideContent('${
-                  chunk.id
-                }')" ${!hasContent ? "disabled" : ""}>
-                  <i data-lucide="edit-3"></i> Edit Content
-                </button>
                 <button onclick="generationUIController.copySlideContent('${
                   chunk.id
                 }')" ${!hasContent ? "disabled" : ""}>
@@ -306,7 +827,7 @@ class GenerationUIController {
    */
   renderSlidePreview(chunk) {
     if (window.slideRenderer) {
-      return window.slideRenderer.renderSlide(chunk, true);
+      return window.slideRenderer.renderSlide(chunk, true); // TRUE for editable
     } else {
       return this.renderBasicSlidePreview(chunk);
     }
@@ -366,7 +887,16 @@ class GenerationUIController {
         this.updateGenerationUI();
       }, 2000);
     }
+
+    // Enable/disable save all button based on unsaved changes
+    const saveAllBtn = document.getElementById("saveAllBtn");
+    if (saveAllBtn) {
+      saveAllBtn.disabled = this.unsavedChanges.size === 0;
+    }
   }
+
+  // ... (rest of the existing methods remain the same: generateChunkContent,
+  // regenerateChunkContent, generateAllContent, etc.)
 
   /**
    * Generate content for specific chunk
@@ -673,16 +1203,6 @@ class GenerationUIController {
   }
 
   /**
-   * Edit slide content
-   */
-  editSlideContent(chunkId) {
-    // Implementation for inline content editing
-    StatusManager.showInfo(
-      "Inline content editing will be implemented in a future version"
-    );
-  }
-
-  /**
    * Copy slide content to clipboard
    */
   async copySlideContent(chunkId) {
@@ -836,16 +1356,25 @@ class GenerationUIController {
    * Cleanup resources
    */
   cleanup() {
-    // Remove event handlers
-    this.eventHandlers.forEach(({ element, event, handler }) => {
-      element.removeEventListener(event, handler);
-    });
-    this.eventHandlers.clear();
+    // Clean up editing handlers
+    this.cleanupEditingHandlers();
+
+    // Clear timeouts
+    if (this.autoSaveTimeouts) {
+      Object.values(this.autoSaveTimeouts).forEach(clearTimeout);
+      this.autoSaveTimeouts = {};
+    }
 
     // Close any open dropdowns
     document.querySelectorAll(".dropdown-menu").forEach((menu) => {
       menu.classList.remove("show");
     });
+
+    // Remove toolbar
+    const toolbar = document.getElementById("editing-toolbar");
+    if (toolbar) {
+      toolbar.remove();
+    }
 
     console.log("GenerationUIController cleaned up");
   }
