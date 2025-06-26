@@ -1,6 +1,6 @@
 /**
- * Course Forge MVP - Generation UI Controller (FIXED INLINE EDITING)
- * Handles content generation display, interaction, and UI management with working inline editing
+ * Course Forge MVP - Generation UI Controller (WITH GROUND TRUTH SUPPORT)
+ * Handles content generation display, interaction, and UI management with ground truth editing
  */
 
 class GenerationUIController {
@@ -10,11 +10,14 @@ class GenerationUIController {
     this.contentGenerator = contentGenerator;
     this.eventHandlers = new Map();
     this.editingSession = new Map(); // Track editing sessions
+    this.autoSaveTimeouts = {}; // Track auto-save timeouts
 
     this.setupEventListeners();
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log("GenerationUIController initialized with inline editing");
+      console.log(
+        "GenerationUIController initialized with ground truth support"
+      );
     }
   }
 
@@ -69,203 +72,157 @@ class GenerationUIController {
    * Setup inline editing for all contenteditable elements
    */
   setupInlineEditing() {
-    // Remove existing handlers
+    // Remove existing handlers to prevent duplicates
     this.cleanupEditingHandlers();
 
     // Find all contenteditable elements
     const editableElements = document.querySelectorAll(
-      '[contenteditable="true"][data-field]'
+      '[contenteditable="true"]'
     );
 
     editableElements.forEach((element) => {
-      this.setupElementEditing(element);
-    });
+      const chunkId = element.dataset.chunkId;
+      const field = element.dataset.field;
 
-    // Setup image URL inputs
-    const imageInputs = document.querySelectorAll(
-      "input.image-url-input[data-field]"
-    );
-    imageInputs.forEach((input) => {
-      this.setupImageInputEditing(input);
-    });
+      if (!chunkId || !field) return;
 
-    // Setup select elements (like correct answer selectors)
-    const selectElements = document.querySelectorAll("select[data-field]");
-    selectElements.forEach((select) => {
-      this.setupSelectEditing(select);
+      // Create handler functions
+      const focusHandler = (e) =>
+        this.startInlineEdit(e.target, chunkId, field);
+      const blurHandler = (e) => this.saveInlineEdit(e.target);
+      const keydownHandler = (e) => this.handleInlineEditKeydown(e, e.target);
+
+      // Add event listeners
+      element.addEventListener("focus", focusHandler);
+      element.addEventListener("blur", blurHandler);
+      element.addEventListener("keydown", keydownHandler);
+
+      // Store handlers for cleanup
+      const handlerKey = `${chunkId}-${field}`;
+      this.eventHandlers.set(handlerKey, {
+        element,
+        handlers: {
+          focus: focusHandler,
+          blur: blurHandler,
+          keydown: keydownHandler,
+        },
+      });
     });
 
     if (CONFIG.DEBUG.ENABLED) {
       console.log(
-        `Setup inline editing for ${editableElements.length} contenteditable elements`
+        `Setup inline editing for ${editableElements.length} elements`
       );
     }
   }
 
   /**
-   * Setup editing for a specific element
+   * Cleanup editing handlers
    */
-  setupElementEditing(element) {
-    const chunkId = this.findChunkIdForElement(element);
-    const field = element.dataset.field;
-
-    if (!chunkId || !field) {
-      console.warn("Element missing chunk ID or field:", element);
-      return;
-    }
-
-    // Store original content
-    const originalContent = element.innerHTML || element.textContent || "";
-
-    // Input event for real-time changes
-    const inputHandler = (e) => {
-      this.handleElementInput(chunkId, field, element, e);
-    };
-
-    // Focus event
-    const focusHandler = (e) => {
-      this.handleElementFocus(chunkId, field, element, e);
-    };
-
-    // Blur event for saving
-    const blurHandler = (e) => {
-      this.handleElementBlur(chunkId, field, element, e);
-    };
-
-    // Keydown for shortcuts
-    const keydownHandler = (e) => {
-      this.handleElementKeydown(chunkId, field, element, e);
-    };
-
-    element.addEventListener("input", inputHandler);
-    element.addEventListener("focus", focusHandler);
-    element.addEventListener("blur", blurHandler);
-    element.addEventListener("keydown", keydownHandler);
-
-    // Store handlers for cleanup
-    const handlerKey = `${chunkId}-${field}-${Date.now()}`;
-    this.eventHandlers.set(handlerKey, {
-      element,
-      handlers: [
-        { event: "input", handler: inputHandler },
-        { event: "focus", handler: focusHandler },
-        { event: "blur", handler: blurHandler },
-        { event: "keydown", handler: keydownHandler },
-      ],
+  cleanupEditingHandlers() {
+    this.eventHandlers.forEach(({ element, handlers }) => {
+      element.removeEventListener("focus", handlers.focus);
+      element.removeEventListener("blur", handlers.blur);
+      element.removeEventListener("keydown", handlers.keydown);
     });
 
-    // Store original content
-    element.dataset.originalContent = originalContent;
+    this.eventHandlers.clear();
   }
 
   /**
-   * Setup editing for image URL inputs
+   * Start inline editing session
    */
-  setupImageInputEditing(input) {
-    const chunkId = this.findChunkIdForElement(input);
-    const field = input.dataset.field;
+  startInlineEdit(element, chunkId, field) {
+    const sessionKey = `${chunkId}-${field}`;
 
-    if (!chunkId || !field) return;
-
-    const changeHandler = (e) => {
-      const newUrl = e.target.value;
-      this.updateChunkContent(chunkId, field, newUrl);
-
-      // Update the image element if it exists
-      const imageElement = input.parentElement.querySelector(".slide-image");
-      if (imageElement) {
-        imageElement.src = newUrl;
-      }
-
-      this.markChunkAsModified(chunkId);
-    };
-
-    input.addEventListener("change", changeHandler);
-    input.addEventListener("blur", changeHandler);
-
-    const handlerKey = `${chunkId}-${field}-input-${Date.now()}`;
-    this.eventHandlers.set(handlerKey, {
-      element: input,
-      handlers: [
-        { event: "change", handler: changeHandler },
-        { event: "blur", handler: changeHandler },
-      ],
+    // Store original value
+    this.editingSession.set(sessionKey, {
+      originalValue: this.getElementContent(element),
+      element: element,
+      chunkId: chunkId,
+      field: field,
+      startTime: Date.now(),
     });
-  }
 
-  /**
-   * Setup editing for select elements
-   */
-  setupSelectEditing(select) {
-    const chunkId = this.findChunkIdForElement(select);
-    const field = select.dataset.field;
-
-    if (!chunkId || !field) return;
-
-    const changeHandler = (e) => {
-      let value = e.target.value;
-
-      // Convert to number if it's correctAnswer field
-      if (field === "correctAnswer") {
-        value = parseInt(value, 10);
-      }
-
-      this.updateChunkContent(chunkId, field, value);
-      this.markChunkAsModified(chunkId);
-    };
-
-    select.addEventListener("change", changeHandler);
-
-    const handlerKey = `${chunkId}-${field}-select-${Date.now()}`;
-    this.eventHandlers.set(handlerKey, {
-      element: select,
-      handlers: [{ event: "change", handler: changeHandler }],
-    });
-  }
-
-  /**
-   * Handle element input (real-time changes)
-   */
-  handleElementInput(chunkId, field, element, event) {
-    // Visual feedback for changes
+    // Add editing class
     element.classList.add("editing");
 
-    // Auto-save after delay
-    this.debounceAutoSave(chunkId, field, element);
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log(`Started editing: ${field} for chunk ${chunkId}`);
+    }
   }
 
   /**
-   * Handle element focus
+   * Save inline edit
    */
-  handleElementFocus(chunkId, field, element, event) {
-    element.classList.add("focused");
+  saveInlineEdit(element) {
+    const chunkId = element.dataset.chunkId;
+    const field = element.dataset.field;
+    const sessionKey = `${chunkId}-${field}`;
 
-    // Start editing session
-    this.editingSession.set(`${chunkId}-${field}`, {
-      element,
-      startTime: Date.now(),
-      originalContent: element.dataset.originalContent,
-    });
+    if (!chunkId || !field) return;
+
+    const session = this.editingSession.get(sessionKey);
+    if (!session) return;
+
+    const newValue = this.getElementContent(element).trim();
+    const hasChanged = newValue !== session.originalValue;
+
+    // Remove editing class
+    element.classList.remove("editing");
+
+    if (hasChanged) {
+      // Clear any pending auto-save
+      if (this.autoSaveTimeouts[sessionKey]) {
+        clearTimeout(this.autoSaveTimeouts[sessionKey]);
+      }
+
+      // Update content immediately
+      this.updateChunkContent(chunkId, field, newValue);
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(`Saved edit: ${field} = "${newValue}"`);
+      }
+    }
+
+    // Clean up session
+    this.editingSession.delete(sessionKey);
   }
 
   /**
-   * Handle element blur (save changes)
+   * Cancel inline editing
    */
-  handleElementBlur(chunkId, field, element, event) {
-    element.classList.remove("focused", "editing");
+  cancelEditing(chunkId, field, element) {
+    const sessionKey = `${chunkId}-${field}`;
+    const session = this.editingSession.get(sessionKey);
 
-    const content = this.getElementContent(element);
-    this.updateChunkContent(chunkId, field, content);
+    if (session) {
+      // Restore original value
+      if (element.tagName === "INPUT") {
+        element.value = session.originalValue;
+      } else {
+        element.textContent = session.originalValue;
+      }
 
-    // End editing session
-    this.editingSession.delete(`${chunkId}-${field}`);
+      element.classList.remove("editing");
+      this.editingSession.delete(sessionKey);
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(`Cancelled editing: ${field}`);
+      }
+    }
   }
 
   /**
-   * Handle keydown events (shortcuts)
+   * Handle keydown events during inline editing
    */
-  handleElementKeydown(chunkId, field, element, event) {
-    // Escape to cancel
+  handleInlineEditKeydown(event, element) {
+    const chunkId = element.dataset.chunkId;
+    const field = element.dataset.field;
+
+    if (!chunkId || !field) return;
+
+    // Escape key: cancel editing
     if (event.key === "Escape") {
       event.preventDefault();
       this.cancelEditing(chunkId, field, element);
@@ -274,10 +231,16 @@ class GenerationUIController {
 
     // Enter behavior for different field types
     if (event.key === "Enter") {
-      if (field.includes("title") || field.includes("header")) {
-        // Single-line fields: blur on Enter
-        event.preventDefault();
-        element.blur();
+      if (
+        field.includes("title") ||
+        field.includes("header") ||
+        field === "groundTruth"
+      ) {
+        // Single-line fields: blur on Enter (except ground truth which can be multi-line)
+        if (field !== "groundTruth") {
+          event.preventDefault();
+          element.blur();
+        }
       }
       // Multi-line fields: allow normal Enter behavior
     }
@@ -293,13 +256,12 @@ class GenerationUIController {
       return element.value;
     } else {
       // For contenteditable elements, return text content for most fields
-      // except for rich content where we might want HTML
       return element.textContent || "";
     }
   }
 
   /**
-   * Update chunk content in state
+   * Update chunk content in state (ENHANCED FOR GROUND TRUTH)
    */
   updateChunkContent(chunkId, field, value) {
     const chunks = this.stateManager.getState("chunks") || [];
@@ -311,13 +273,28 @@ class GenerationUIController {
     }
 
     const chunk = chunks[chunkIndex];
-    if (!chunk.generatedContent) {
-      console.warn(`No generated content to update for chunk: ${chunkId}`);
+
+    // Handle ground truth updates directly on chunk object
+    if (field === "groundTruth") {
+      chunk.groundTruth = value;
+
+      // Visual feedback for ground truth update
+      const element = document.querySelector(
+        `[data-chunk-id="${chunkId}"][data-field="groundTruth"]`
+      );
+      if (element) {
+        element.classList.add("updated");
+        setTimeout(() => element.classList.remove("updated"), 1000);
+      }
+
+      StatusManager.showSuccess("Ground truth updated");
+    } else if (chunk.generatedContent) {
+      // Handle generated content updates
+      this.setNestedValue(chunk.generatedContent, field, value);
+    } else {
+      console.warn(`No content to update for field: ${field}`);
       return;
     }
-
-    // Update the content using dot notation
-    this.setNestedValue(chunk.generatedContent, field, value);
 
     // Update the chunk in state
     chunks[chunkIndex] = chunk;
@@ -326,6 +303,13 @@ class GenerationUIController {
     if (CONFIG.DEBUG.ENABLED) {
       console.log(`Updated ${field} for chunk ${chunkId}:`, value);
     }
+
+    // Emit update event
+    this.eventSystem.emit("content:updated", {
+      chunkId,
+      field,
+      value,
+    });
   }
 
   /**
@@ -347,180 +331,22 @@ class GenerationUIController {
       current = current[key];
     }
 
-    const lastKey = keys[keys.length - 1];
-    current[lastKey] = value;
+    current[keys[keys.length - 1]] = value;
   }
-
-  /**
-   * Cancel editing for an element
-   */
-  cancelEditing(chunkId, field, element) {
-    const session = this.editingSession.get(`${chunkId}-${field}`);
-    if (session) {
-      // Restore original content
-      if (element.tagName === "INPUT") {
-        element.value = session.originalContent;
-      } else {
-        element.innerHTML = session.originalContent;
-      }
-
-      element.blur();
-    }
-  }
-
-  /**
-   * Debounced auto-save
-   */
-  debounceAutoSave(chunkId, field, element) {
-    const key = `${chunkId}-${field}`;
-
-    // Clear existing timeout
-    if (this.autoSaveTimeouts && this.autoSaveTimeouts[key]) {
-      clearTimeout(this.autoSaveTimeouts[key]);
-    }
-
-    if (!this.autoSaveTimeouts) {
-      this.autoSaveTimeouts = {};
-    }
-
-    // Set new timeout - save after 1 second of inactivity
-    this.autoSaveTimeouts[key] = setTimeout(() => {
-      const content = this.getElementContent(element);
-      this.updateChunkContent(chunkId, field, content);
-      delete this.autoSaveTimeouts[key];
-    }, 1000);
-  }
-
-  /**
-   * Find chunk ID for an element
-   */
-  findChunkIdForElement(element) {
-    // Walk up the DOM to find the chunk container
-    let current = element;
-    while (current && current !== document.body) {
-      if (current.dataset && current.dataset.chunkId) {
-        return current.dataset.chunkId;
-      }
-      current = current.parentElement;
-    }
-    return null;
-  }
-
-  /**
-   * Show editing toolbar
-   */
-  showEditingToolbar(element) {
-    // Create toolbar if it doesn't exist
-    let toolbar = document.getElementById("editing-toolbar");
-    if (!toolbar) {
-      toolbar = document.createElement("div");
-      toolbar.id = "editing-toolbar";
-      toolbar.className = "editing-toolbar";
-      toolbar.innerHTML = `
-        <div class="toolbar-content">
-          <button class="toolbar-btn" onclick="generationUIController.saveAllChanges()">
-            <i data-lucide="save"></i> Save All
-          </button>
-          <button class="toolbar-btn" onclick="generationUIController.discardAllChanges()">
-            <i data-lucide="x"></i> Discard
-          </button>
-          <span class="toolbar-status" id="toolbar-status"></span>
-        </div>
-      `;
-      document.body.appendChild(toolbar);
-    }
-
-    toolbar.classList.add("visible");
-    this.updateToolbarPosition(element);
-  }
-
-  /**
-   * Hide editing toolbar
-   */
-  hideEditingToolbar() {
-    const toolbar = document.getElementById("editing-toolbar");
-    if (toolbar && this.editingSession.size === 0) {
-      toolbar.classList.remove("visible");
-    }
-  }
-
-  /**
-   * Update toolbar position
-   */
-  updateToolbarPosition(element) {
-    const toolbar = document.getElementById("editing-toolbar");
-    if (!toolbar) return;
-
-    const rect = element.getBoundingClientRect();
-    const toolbarHeight = 50;
-
-    let top = rect.top - toolbarHeight - 10;
-    if (top < 10) {
-      top = rect.bottom + 10;
-    }
-
-    toolbar.style.top = `${top}px`;
-    toolbar.style.left = `${Math.min(rect.left, window.innerWidth - 300)}px`;
-  }
-
-  /**
-   * Update modification status
-   */
-  updateModificationStatus() {
-    const status = document.getElementById("toolbar-status");
-    if (status) {
-      const count = this.unsavedChanges.size;
-      if (count > 0) {
-        status.textContent = `${count} unsaved change${count > 1 ? "s" : ""}`;
-        status.className = "toolbar-status unsaved";
-      } else {
-        status.textContent = "All changes saved";
-        status.className = "toolbar-status saved";
-      }
-    }
-  }
-
-  /**
-   * Discard all changes
-   */
-  discardAllChanges() {
-    const confirmed = confirm("Discard all unsaved changes?");
-    if (!confirmed) return;
-
-    this.unsavedChanges.clear();
-    this.updateGenerationUI(); // Refresh to original state
-    StatusManager.showInfo("Changes discarded");
-  }
-
-  /**
-   * Clean up editing handlers
-   */
-  cleanupEditingHandlers() {
-    this.eventHandlers.forEach(({ element, handlers }) => {
-      handlers.forEach(({ event, handler }) => {
-        element.removeEventListener(event, handler);
-      });
-    });
-    this.eventHandlers.clear();
-  }
-
-  // ... (rest of the existing methods remain the same)
 
   /**
    * Render empty state
    */
   renderEmptyState(container) {
     container.innerHTML = `
-      <div class="empty-state">
-        <i data-lucide="sparkles" class="empty-icon"></i>
-        <p>No chunks available for content generation.</p>
-        <p>Please go back to the Chunking tab and create some chunks first.</p>
-        <div class="empty-actions">
-          <button class="btn btn-secondary" onclick="app.tabManager.switchTab('chunking')">
-            <i data-lucide="arrow-left"></i>
-            Back to Chunking
-          </button>
-        </div>
+      <div class="generation-empty-state">
+        <i data-lucide="layers"></i>
+        <h3>No Content to Generate</h3>
+        <p>Create some chunks first to begin generating slide content.</p>
+        <button class="btn btn-primary" onclick="app.showTab('chunks')">
+          <i data-lucide="arrow-left"></i>
+          Go to Chunks
+        </button>
       </div>
     `;
   }
@@ -530,21 +356,35 @@ class GenerationUIController {
    */
   renderGenerationView(container, chunks) {
     const sortedChunks = chunks.sort((a, b) => a.order - b.order);
+    const stats = this.calculateGenerationStats(chunks);
 
     container.innerHTML = `
       <div class="generation-header">
         <div class="generation-stats">
-          ${this.renderGenerationStats(chunks)}
+          ${this.renderGenerationStats(stats)}
         </div>
         <div class="generation-actions">
-          <button class="btn btn-secondary" onclick="generationUIController.generateSelected()">
-            <i data-lucide="zap"></i>
-            Generate Selected
-          </button>
           <button class="btn btn-primary" onclick="generationUIController.generateAllContent()">
             <i data-lucide="sparkles"></i>
-            Generate All Content
+            Generate All
           </button>
+          <button class="btn btn-secondary" onclick="generationUIController.generateSelected()">
+            <i data-lucide="check-square"></i>
+            Generate Selected
+          </button>
+          <div class="generation-filters">
+            <select id="generationFilter" onchange="generationUIController.applyFilter()">
+              <option value="all">All Slides</option>
+              <option value="generated">Generated</option>
+              <option value="pending">Pending</option>
+            </select>
+            <select id="typeFilter" onchange="generationUIController.applyFilter()">
+              <option value="all">All Types</option>
+              ${CONFIG.SLIDE_TYPES.map(
+                (type) => `<option value="${type.value}">${type.label}</option>`
+              ).join("")}
+            </select>
+          </div>
         </div>
       </div>
       <div class="slides-container">
@@ -558,97 +398,65 @@ class GenerationUIController {
   }
 
   /**
+   * Calculate generation statistics
+   */
+  calculateGenerationStats(chunks) {
+    return {
+      total: chunks.length,
+      generated: chunks.filter((chunk) => chunk.generatedContent).length,
+      pending: chunks.filter(
+        (chunk) => !chunk.generatedContent && !chunk.isLocked
+      ).length,
+      locked: chunks.filter((chunk) => chunk.isLocked).length,
+    };
+  }
+
+  /**
    * Render generation statistics
    */
-  renderGenerationStats(chunks) {
-    const total = chunks.length;
-    const generated = chunks.filter((chunk) => chunk.generatedContent).length;
-    const pending = total - generated;
-    const progress = total > 0 ? Math.round((generated / total) * 100) : 0;
-
+  renderGenerationStats(stats) {
     return `
       <div class="stats-grid">
         <div class="stat-item">
-          <div class="stat-value">${total}</div>
+          <div class="stat-value">${stats.total}</div>
           <div class="stat-label">Total Slides</div>
         </div>
         <div class="stat-item">
-          <div class="stat-value">${generated}</div>
+          <div class="stat-value">${stats.generated}</div>
           <div class="stat-label">Generated</div>
         </div>
         <div class="stat-item">
-          <div class="stat-value">${pending}</div>
+          <div class="stat-value">${stats.pending}</div>
           <div class="stat-label">Pending</div>
         </div>
         <div class="stat-item">
-          <div class="stat-value">${progress}%</div>
-          <div class="stat-label">Complete</div>
+          <div class="stat-value">${stats.locked}</div>
+          <div class="stat-label">Locked</div>
         </div>
       </div>
     `;
   }
 
   /**
-   * Render generation filters
-   */
-  // renderGenerationFilters() {
-  //   return `
-  //     <div class="filter-controls">
-  //       <div class="filter-group">
-  //         <label>Show:</label>
-  //         <select id="generationFilter" onchange="generationUIController.applyFilter(this.value)">
-  //           <option value="all">All Slides</option>
-  //           <option value="generated">Generated Only</option>
-  //           <option value="pending">Pending Only</option>
-  //           <option value="locked">Locked Only</option>
-  //         </select>
-  //       </div>
-  //       <div class="filter-group">
-  //         <label>Type:</label>
-  //         <select id="typeFilter" onchange="generationUIController.applyFilter()">
-  //           <option value="all">All Types</option>
-  //           ${CONFIG.SLIDE_TYPES.map(
-  //             (type) => `<option value="${type.value}">${type.label}</option>`
-  //           ).join("")}
-  //         </select>
-  //       </div>
-  //       <div class="filter-group">
-  //         <button class="btn btn-secondary btn-sm" onclick="generationUIController.clearFilters()">
-  //           <i data-lucide="x"></i>
-  //           Clear Filters
-  //         </button>
-  //       </div>
-  //     </div>
-  //   `;
-  // }
-
-  /**
-   * Render generation item for each chunk
+   * Render individual generation item
    */
   renderGenerationItem(chunk) {
     const hasContent = !!chunk.generatedContent;
-    const statusClass = hasContent ? "has-content" : "no-content";
-    const isProcessing = this.contentGenerator.currentlyGenerating?.has(
-      chunk.id
-    );
+    const isProcessing =
+      this.contentGenerator &&
+      this.contentGenerator.currentlyGenerating.has(chunk.id);
 
     return `
-      <div class="generation-item ${statusClass} ${
-      chunk.isLocked ? "locked" : ""
-    } ${isProcessing ? "processing" : ""}" 
+      <div class="generation-item ${hasContent ? "has-content" : ""} ${
+      isProcessing ? "processing" : ""
+    }" 
            data-chunk-id="${chunk.id}" 
-           data-slide-type="${chunk.slideType}"
-           data-status="${hasContent ? "generated" : "pending"}">
+           data-slide-type="${chunk.slideType}">
         <div class="generation-header">
           <div class="chunk-info">
-            <div class="chunk-selection">
-              <input type="checkbox" class="generation-checkbox" data-chunk-id="${
-                chunk.id
-              }"
-                     onchange="generationUIController.toggleGenerationSelection('${
-                       chunk.id
-                     }', this.checked)">
-            </div>
+            <input type="checkbox" class="generation-checkbox" data-chunk-id="${
+              chunk.id
+            }">
             <div class="chunk-details">
               <h3 class="chunk-title">${this.escapeHtml(chunk.title)}</h3>
               <div class="chunk-meta">
@@ -658,32 +466,24 @@ class GenerationUIController {
                 <span class="content-status ${
                   hasContent ? "generated" : "pending"
                 }">
-                  ${
-                    isProcessing
-                      ? "Generating..."
-                      : hasContent
-                      ? "Content Generated"
-                      : "Pending Generation"
-                  }
+                  ${hasContent ? "Generated" : "Pending"}
                 </span>
                 ${
-                  chunk.isLocked
-                    ? '<span class="locked-badge"><i data-lucide="lock"></i> Locked</span>'
+                  chunk.lastGenerated
+                    ? `
+                  <span class="last-updated" title="Last updated: ${new Date(
+                    chunk.lastGenerated
+                  ).toLocaleString()}">
+                    ${this.getTimeAgo(new Date(chunk.lastGenerated))}
+                  </span>
+                `
                     : ""
                 }
               </div>
             </div>
           </div>
           <div class="generation-controls">
-            <button class="btn btn-secondary btn-sm" 
-                    onclick="generationUIController.switchSlideType('${
-                      chunk.id
-                    }')" 
-                    title="Change slide type"
-                    ${chunk.isLocked ? "disabled" : ""}>
-              <i data-lucide="shuffle"></i>
-            </button>
-            <button class="btn btn-primary btn-sm" 
+            <button class="btn btn-primary" 
                     onclick="generationUIController.${
                       hasContent
                         ? "regenerateChunkContent"
@@ -739,30 +539,169 @@ class GenerationUIController {
   }
 
   /**
-   * Render slide preview
+   * Render slide preview with ground truth support
    */
   renderSlidePreview(chunk) {
+    // If slideRenderer is available, use it for full slide rendering
     if (window.slideRenderer) {
-      return window.slideRenderer.renderSlide(chunk, true); // TRUE for editable
+      const slideContent = window.slideRenderer.renderSlide(chunk, true); // TRUE for editable
+
+      // Add ground truth section to the slide content
+      const groundTruthSection = this.renderGroundTruthSection(chunk);
+
+      return `
+        ${groundTruthSection}
+        <div class="slide-content-wrapper">
+          ${slideContent}
+        </div>
+      `;
     } else {
+      // Fallback to basic preview with ground truth
       return this.renderBasicSlidePreview(chunk);
     }
   }
 
   /**
-   * Render basic slide preview (fallback)
+   * Render ground truth section
+   */
+  renderGroundTruthSection(chunk) {
+    const hasGroundTruth = chunk.groundTruth && chunk.groundTruth.trim();
+    const isExpanded = hasGroundTruth || !chunk.generatedContent; // Expand if no content yet
+
+    return `
+      <div class="ground-truth-section ${isExpanded ? "expanded" : ""}">
+        <div class="ground-truth-header">
+          <h4 class="ground-truth-label">
+            <i data-lucide="target"></i>
+            Ground Truth Guidance
+          </h4>
+          <div class="ground-truth-actions">
+            <button class="btn btn-sm btn-link" 
+                    onclick="generationUIController.toggleGroundTruthExpanded('${
+                      chunk.id
+                    }')"
+                    title="Toggle ground truth display">
+              <i data-lucide="${
+                isExpanded ? "chevron-up" : "chevron-down"
+              }" class="expand-icon"></i>
+            </button>
+          </div>
+        </div>
+        <div class="ground-truth-content ${
+          hasGroundTruth ? "has-content" : "empty"
+        }" 
+             id="ground-truth-${chunk.id}"
+             contenteditable="true"
+             data-chunk-id="${chunk.id}"
+             data-field="groundTruth"
+             onblur="generationUIController.saveInlineEdit(this)"
+             onkeydown="generationUIController.handleInlineEditKeydown(event, this)"
+             placeholder="Describe what this slide should cover and its purpose..."
+             style="${isExpanded ? "" : "max-height: 3rem; overflow: hidden;"}">
+          ${this.escapeHtml(chunk.groundTruth || "")}
+        </div>
+        ${this.renderGroundTruthHints(chunk)}
+      </div>
+    `;
+  }
+
+  /**
+   * Render ground truth hints
+   */
+  renderGroundTruthHints(chunk) {
+    if (chunk.groundTruth && chunk.groundTruth.trim()) {
+      return ""; // Don't show hints if content exists
+    }
+
+    const hints = {
+      title:
+        "Introduce the course topic and overview what learners will discover",
+      courseInfo:
+        "Outline course duration, target audience, and key learning objectives",
+      textAndImage: "Explain the main concept with supporting visual context",
+      textAndBullets: "Break down key points and actionable information",
+      iconsWithTitles: "Highlight important categories or process steps",
+      multipleChoice: "Test understanding of a specific concept or scenario",
+      tabs: "Organize related information into digestible sections",
+      flipCards: "Present terms/concepts with detailed explanations",
+      faq: "Address common questions or concerns about this topic",
+      popups: "Provide additional resources or detailed explanations",
+    };
+
+    const hint =
+      hints[chunk.slideType] || "Describe what this slide should cover...";
+
+    return `
+      <div class="ground-truth-hint">
+        <i data-lucide="lightbulb"></i>
+        <span>${hint}</span>
+      </div>
+    `;
+  }
+
+  /**
+   * Toggle ground truth expanded state
+   */
+  toggleGroundTruthExpanded(chunkId) {
+    const section = document
+      .querySelector(`#ground-truth-${chunkId}`)
+      .closest(".ground-truth-section");
+    const content = document.querySelector(`#ground-truth-${chunkId}`);
+    const icon = section.querySelector(".expand-icon");
+
+    if (!section || !content || !icon) return;
+
+    const isExpanded = section.classList.contains("expanded");
+
+    if (isExpanded) {
+      // Collapse
+      section.classList.remove("expanded");
+      content.style.maxHeight = "3rem";
+      content.style.overflow = "hidden";
+      icon.setAttribute("data-lucide", "chevron-down");
+    } else {
+      // Expand
+      section.classList.add("expanded");
+      content.style.maxHeight = "none";
+      content.style.overflow = "visible";
+      icon.setAttribute("data-lucide", "chevron-up");
+    }
+
+    // Reinitialize icons
+    if (typeof lucide !== "undefined") {
+      lucide.createIcons();
+    }
+  }
+
+  /**
+   * Render basic slide preview (fallback) with ground truth
    */
   renderBasicSlidePreview(chunk) {
+    const groundTruthSection = this.renderGroundTruthSection(chunk);
+
     if (!chunk.generatedContent) {
       return `
+        ${groundTruthSection}
         <div class="empty-slide-preview">
           <i data-lucide="file-text"></i>
           <p>Click "Generate" to create content for this slide</p>
+          ${
+            chunk.groundTruth
+              ? `
+            <div class="preview-ground-truth">
+              <strong>Ground Truth:</strong> ${this.escapeHtml(
+                chunk.groundTruth.substring(0, 100)
+              )}${chunk.groundTruth.length > 100 ? "..." : ""}
+            </div>
+          `
+              : ""
+          }
         </div>
       `;
     }
 
     return `
+      ${groundTruthSection}
       <div class="basic-slide-preview">
         <h4>${this.escapeHtml(
           chunk.generatedContent.header || chunk.title
@@ -804,9 +743,6 @@ class GenerationUIController {
       }, 2000);
     }
   }
-
-  // ... (rest of the existing methods remain the same: generateChunkContent,
-  // regenerateChunkContent, generateAllContent, etc.)
 
   /**
    * Generate content for specific chunk
@@ -882,174 +818,28 @@ class GenerationUIController {
   }
 
   /**
-   * Switch slide type for a chunk
-   */
-  async switchSlideType(chunkId) {
-    const chunk = this.getChunkById(chunkId);
-    if (!chunk) return;
-
-    const newType = await this.showSlideTypeSelector(chunk.slideType);
-    if (newType && newType !== chunk.slideType) {
-      if (this.contentGenerator) {
-        await this.contentGenerator.changeSlideTypeAndRegenerate(
-          chunkId,
-          newType
-        );
-      }
-    }
-  }
-
-  /**
-   * Show slide type selector modal
-   */
-  async showSlideTypeSelector(currentType) {
-    return new Promise((resolve) => {
-      const modalId = `slide-type-modal-${Date.now()}`;
-      const options = CONFIG.SLIDE_TYPES.map(
-        (type) =>
-          `<option value="${type.value}" ${
-            type.value === currentType ? "selected" : ""
-          }>${type.label}</option>`
-      ).join("");
-
-      const modal = document.createElement("div");
-      modal.className = "slide-type-modal";
-      modal.id = modalId;
-      modal.innerHTML = `
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>Change Slide Type</h3>
-            <button class="modal-close" data-action="cancel">&times;</button>
-          </div>
-          <div class="modal-body">
-            <div class="form-group">
-              <label for="slideTypeSelect-${modalId}">Select new slide type:</label>
-              <select id="slideTypeSelect-${modalId}" class="form-select">
-                ${options}
-              </select>
-            </div>
-            <div class="slide-type-preview" id="preview-${modalId}">
-              <!-- Preview will be updated when selection changes -->
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-action="cancel">Cancel</button>
-            <button class="btn btn-primary" data-action="confirm">Change Type</button>
-          </div>
-        </div>
-      `;
-
-      // Add styles
-      modal.style.cssText = `
-        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
-        z-index: 1000;
-      `;
-
-      const cleanup = () => {
-        if (modal.parentNode) {
-          modal.parentNode.removeChild(modal);
-        }
-      };
-
-      modal.addEventListener("click", (e) => {
-        const action = e.target.dataset.action;
-        if (action === "cancel") {
-          cleanup();
-          resolve(null);
-        } else if (action === "confirm") {
-          const value = document.getElementById(
-            `slideTypeSelect-${modalId}`
-          ).value;
-          cleanup();
-          resolve(value);
-        } else if (e.target === modal) {
-          cleanup();
-          resolve(null);
-        }
-      });
-
-      document.body.appendChild(modal);
-
-      setTimeout(() => {
-        cleanup();
-        resolve(null);
-      }, 30000);
-    });
-  }
-
-  /**
-   * Toggle generation selection
-   */
-  toggleGenerationSelection(chunkId, isSelected) {
-    const checkbox = document.querySelector(
-      `input[data-chunk-id="${chunkId}"].generation-checkbox`
-    );
-    if (checkbox) {
-      checkbox.checked = isSelected;
-    }
-
-    this.updateBulkGenerationActions();
-  }
-
-  /**
-   * Update bulk generation actions
-   */
-  updateBulkGenerationActions() {
-    const selectedCount = document.querySelectorAll(
-      ".generation-checkbox:checked"
-    ).length;
-
-    const generateSelectedBtn = document.querySelector(
-      'button[onclick*="generateSelected"]'
-    );
-    if (generateSelectedBtn) {
-      generateSelectedBtn.disabled = selectedCount === 0;
-      generateSelectedBtn.innerHTML = `
-        <i data-lucide="zap"></i>
-        Generate Selected${selectedCount > 0 ? ` (${selectedCount})` : ""}
-      `;
-    }
-  }
-
-  /**
    * Apply filters to generation items
    */
-  applyFilter(statusFilter = null) {
-    const status =
-      statusFilter ||
-      document.getElementById("generationFilter")?.value ||
-      "all";
-    const type = document.getElementById("typeFilter")?.value || "all";
+  applyFilter() {
+    const generationFilter =
+      document.getElementById("generationFilter")?.value || "all";
+    const typeFilter = document.getElementById("typeFilter")?.value || "all";
 
     const items = document.querySelectorAll(".generation-item");
 
     items.forEach((item) => {
+      const chunkId = item.dataset.chunkId;
+      const slideType = item.dataset.slideType;
+      const hasContent = item.classList.contains("has-content");
+
       let show = true;
 
-      // Status filter
-      if (status !== "all") {
-        const itemStatus = item.dataset.status;
-        const isLocked = item.classList.contains("locked");
+      // Apply generation status filter
+      if (generationFilter === "generated" && !hasContent) show = false;
+      if (generationFilter === "pending" && hasContent) show = false;
 
-        switch (status) {
-          case "generated":
-            show = itemStatus === "generated";
-            break;
-          case "pending":
-            show = itemStatus === "pending";
-            break;
-          case "locked":
-            show = isLocked;
-            break;
-        }
-      }
-
-      // Type filter
-      if (show && type !== "all") {
-        const itemType = item.dataset.slideType;
-        show = itemType === type;
-      }
+      // Apply slide type filter
+      if (typeFilter !== "all" && slideType !== typeFilter) show = false;
 
       item.style.display = show ? "block" : "none";
     });
@@ -1079,7 +869,7 @@ class GenerationUIController {
     );
     const totalItems = document.querySelectorAll(".generation-item");
 
-    // Could show "Showing X of Y slides" message
+    // Could show "Showing X of Y slides" message if needed
   }
 
   /**
@@ -1165,7 +955,6 @@ class GenerationUIController {
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 2rem; background: #f8fafc; }
           .preview-container { max-width: 800px; margin: 0 auto; background: white; border-radius: 0.75rem; padding: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
           .slide-title { font-size: 1.5rem; margin-bottom: 1rem; color: #1f2937; }
-          /* Copy relevant styles from main app */
         </style>
         <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
       </head>
@@ -1250,6 +1039,24 @@ class GenerationUIController {
       CONFIG.SLIDE_TYPES.map((type) => [type.value, type.label])
     );
     return slideTypeMap.get(slideType) || slideType;
+  }
+
+  /**
+   * Get time ago string
+   */
+  getTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return "just now";
+    if (diffMins < 60)
+      return `${diffMins} minute${diffMins > 1 ? "s" : ""} ago`;
+    if (diffHours < 24)
+      return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+    return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
   }
 
   /**

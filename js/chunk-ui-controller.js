@@ -249,7 +249,7 @@ class ChunkUIController {
    * Render chunk content preview
    */
   renderChunkContent(chunk) {
-    if (!chunk.sourceContent && !chunk.generatedContent) {
+    if (!chunk.sourceContent && !chunk.generatedContent && !chunk.groundTruth) {
       return "";
     }
 
@@ -258,12 +258,29 @@ class ChunkUIController {
     if (chunk.sourceContent) {
       const preview = chunk.sourceContent.substring(0, 200);
       contentPreview = `
-        <div class="chunk-source-preview">
-          <strong>Source:</strong> ${this.escapeHtml(preview)}${
+      <div class="chunk-source-preview">
+        <strong>Source:</strong> ${this.escapeHtml(preview)}${
         chunk.sourceContent.length > 200 ? "..." : ""
       }
-        </div>
-      `;
+      </div>
+    `;
+    }
+
+    // NEW: Add ground truth display
+    if (chunk.groundTruth) {
+      const preview = chunk.groundTruth.substring(0, 150);
+      contentPreview += `
+      <div class="chunk-ground-truth-preview">
+        <strong>Ground Truth:</strong> ${this.escapeHtml(preview)}${
+        chunk.groundTruth.length > 150 ? "..." : ""
+      }
+        <button class="btn btn-sm btn-link edit-ground-truth-btn" 
+                onclick="chunkUIController.editGroundTruth('${chunk.id}')" 
+                title="Edit ground truth">
+          <i data-lucide="edit-3"></i>
+        </button>
+      </div>
+    `;
     }
 
     if (chunk.generatedContent) {
@@ -272,19 +289,38 @@ class ChunkUIController {
         chunk.slideType
       );
       contentPreview += `
-        <div class="chunk-generated-preview">
-          <strong>Generated:</strong> ${contentSummary}
-        </div>
-      `;
+      <div class="chunk-generated-preview">
+        <strong>Generated:</strong> ${contentSummary}
+      </div>
+    `;
     }
 
     return contentPreview
       ? `
-      <div class="chunk-content-preview">
-        ${contentPreview}
-      </div>
-    `
+    <div class="chunk-content-preview">
+      ${contentPreview}
+    </div>
+  `
       : "";
+  }
+
+  /**
+   * Edit ground truth for a chunk
+   */
+  editGroundTruth(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk) return;
+
+    const currentText = chunk.groundTruth || "";
+    const newText = prompt("Edit ground truth guidance:", currentText);
+
+    if (newText !== null && newText !== currentText) {
+      chunk.groundTruth = newText.trim();
+      this.stateManager.setState("chunks", chunks);
+      StatusManager.showSuccess("Ground truth updated");
+    }
   }
 
   /**

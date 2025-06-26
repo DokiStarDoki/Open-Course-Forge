@@ -481,15 +481,17 @@ Respond with your chunks wrapped in XML tags exactly like this:
 <title>Introduction to Course Topic</title>
 <slideType>title</slideType>
 <sourceContent>Relevant portion of source content for this chunk...</sourceContent>
+<groundTruth>A brief paragraph describing what this slide will cover and its purpose within the course.</groundTruth>
 </chunk>
 <chunk>
 <title>Key Concepts Overview</title>
 <slideType>textAndBullets</slideType>
 <sourceContent>Relevant portion of source content for this chunk...</sourceContent>
+<groundTruth>This slide will introduce the main concepts learners need to understand, providing a foundation for deeper topics.</groundTruth>
 </chunk>
 </chunks>
 
-Make sure each chunk has meaningful source content extracted from the provided material.`;
+Make sure each chunk has meaningful source content and ground truth guidance.`;
   }
 
   /**
@@ -675,13 +677,18 @@ COURSE CONTEXT:
 SOURCE CONTENT FOR THIS SLIDE:
 ${chunk.sourceContent}
 
+GROUND TRUTH GUIDANCE:
+${chunk.groundTruth || "No specific guidance provided."}
+
 ADDITIONAL GUIDANCE:
 ${
   courseConfig.additionalGuidance ||
   "Create engaging, practical content that helps learners achieve the objectives."
 }
 
-Please respond using the XML format specified for "${chunk.slideType}" slides.`;
+Please respond using the XML format specified for "${
+      chunk.slideType
+    }" slides. Use the ground truth guidance to ensure the generated content aligns with the intended purpose and coverage of this slide.`;
   }
 
   /**
@@ -713,6 +720,7 @@ Please respond using the XML format specified for "${chunk.slideType}" slides.`;
             this.extractXMLValue(chunkBlock, "slideType") || "textAndImage",
           sourceContent:
             this.extractXMLValue(chunkBlock, "sourceContent") || "",
+          groundTruth: this.extractXMLValue(chunkBlock, "groundTruth") || "", // NEW
           estimatedTime:
             this.extractXMLValue(chunkBlock, "estimatedTime") || "2 minutes",
           order: parseInt(this.extractXMLValue(chunkBlock, "order")) || index,
@@ -736,6 +744,7 @@ Please respond using the XML format specified for "${chunk.slideType}" slides.`;
           title: chunk.title,
           slideType: chunk.slideType,
           sourceContent: chunk.sourceContent,
+          groundTruth: chunk.groundTruth || "", // NEW FIELD
           estimatedTime: chunk.estimatedTime,
           order: chunk.order,
           isLocked: false,
