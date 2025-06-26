@@ -11,15 +11,16 @@ class HTMLExporter {
   }
 
   /**
-   * Generate complete HTML course with vertical scroll layout
+   * Generate complete HTML course with vertical scroll layout (FIXED)
    */
   generateCourseHtml(courseData) {
-    const slides = courseData.slides.filter((slide) => slide.content);
+    const slides = courseData.slides.filter((slide) => slide.generatedContent);
 
     const sectionsHtml = slides
       .map((slide, index) => {
+        // FIXED: slideRenderer.renderSlide expects chunk format, so pass slide as chunk
         const slideHtml = window.slideRenderer
-          ? window.slideRenderer.renderSlide(slide, false)
+          ? window.slideRenderer.renderSlide(slide, false) // slide already has generatedContent property
           : this.renderBasicSlide(slide);
 
         return `
@@ -212,10 +213,11 @@ class HTMLExporter {
   }
 
   /**
-   * Render basic slide fallback
+   * Render basic slide fallback (FIXED)
    */
   renderBasicSlide(slide) {
-    const content = slide.content || {};
+    // FIXED: Check for generatedContent property (not content)
+    const content = slide.generatedContent || {};
 
     return `
       <div class="slide">

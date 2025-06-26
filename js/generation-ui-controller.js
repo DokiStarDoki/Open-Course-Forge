@@ -10,7 +10,6 @@ class GenerationUIController {
     this.contentGenerator = contentGenerator;
     this.eventHandlers = new Map();
     this.editingSession = new Map(); // Track editing sessions
-    this.unsavedChanges = new Set(); // Track chunks with unsaved changes
 
     this.setupEventListeners();
 
@@ -43,7 +42,7 @@ class GenerationUIController {
   }
 
   /**
-   * Update generation UI with inline editing support
+   * Update generation UI
    */
   updateGenerationUI() {
     const container = document.getElementById("generationContainer");
@@ -96,7 +95,11 @@ class GenerationUIController {
       this.setupSelectEditing(select);
     });
 
-    console.log(`Setup inline editing for ${editableElements.length} elements`);
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log(
+        `Setup inline editing for ${editableElements.length} contenteditable elements`
+      );
+    }
   }
 
   /**
@@ -227,9 +230,6 @@ class GenerationUIController {
     // Visual feedback for changes
     element.classList.add("editing");
 
-    // Mark as modified
-    this.markChunkAsModified(chunkId);
-
     // Auto-save after delay
     this.debounceAutoSave(chunkId, field, element);
   }
@@ -246,9 +246,6 @@ class GenerationUIController {
       startTime: Date.now(),
       originalContent: element.dataset.originalContent,
     });
-
-    // Show editing toolbar if needed
-    this.showEditingToolbar(element);
   }
 
   /**
@@ -262,26 +259,12 @@ class GenerationUIController {
 
     // End editing session
     this.editingSession.delete(`${chunkId}-${field}`);
-
-    // Hide editing toolbar
-    this.hideEditingToolbar();
-
-    // Save changes
-    this.saveChunkChanges(chunkId);
   }
 
   /**
    * Handle keydown events (shortcuts)
    */
   handleElementKeydown(chunkId, field, element, event) {
-    // Ctrl+S / Cmd+S to save
-    if ((event.ctrlKey || event.metaKey) && event.key === "s") {
-      event.preventDefault();
-      this.saveChunkChanges(chunkId);
-      StatusManager.showSuccess("Changes saved");
-      return;
-    }
-
     // Escape to cancel
     if (event.key === "Escape") {
       event.preventDefault();
@@ -340,7 +323,9 @@ class GenerationUIController {
     chunks[chunkIndex] = chunk;
     this.stateManager.setState("chunks", chunks);
 
-    console.log(`Updated ${field} for chunk ${chunkId}:`, value);
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log(`Updated ${field} for chunk ${chunkId}:`, value);
+    }
   }
 
   /**
@@ -364,68 +349,6 @@ class GenerationUIController {
 
     const lastKey = keys[keys.length - 1];
     current[lastKey] = value;
-  }
-
-  /**
-   * Mark chunk as modified
-   */
-  markChunkAsModified(chunkId) {
-    this.unsavedChanges.add(chunkId);
-
-    // Visual feedback
-    const chunkElement = document.querySelector(`[data-chunk-id="${chunkId}"]`);
-    if (chunkElement) {
-      chunkElement.classList.add("modified");
-    }
-
-    // Update status
-    this.updateModificationStatus();
-  }
-
-  /**
-   * Save changes for a specific chunk
-   */
-  saveChunkChanges(chunkId) {
-    if (!this.unsavedChanges.has(chunkId)) {
-      return; // No changes to save
-    }
-
-    // Remove from unsaved changes
-    this.unsavedChanges.delete(chunkId);
-
-    // Visual feedback
-    const chunkElement = document.querySelector(`[data-chunk-id="${chunkId}"]`);
-    if (chunkElement) {
-      chunkElement.classList.remove("modified");
-      chunkElement.classList.add("saved");
-
-      setTimeout(() => {
-        chunkElement.classList.remove("saved");
-      }, 2000);
-    }
-
-    // Update modification status
-    this.updateModificationStatus();
-
-    // Emit event
-    this.eventSystem.emit("content:manually-updated", { chunkId });
-  }
-
-  /**
-   * Save all changes
-   */
-  saveAllChanges() {
-    const modifiedChunks = Array.from(this.unsavedChanges);
-
-    modifiedChunks.forEach((chunkId) => {
-      this.saveChunkChanges(chunkId);
-    });
-
-    if (modifiedChunks.length > 0) {
-      StatusManager.showSuccess(
-        `Saved changes to ${modifiedChunks.length} slides`
-      );
-    }
   }
 
   /**
@@ -460,12 +383,12 @@ class GenerationUIController {
       this.autoSaveTimeouts = {};
     }
 
-    // Set new timeout
+    // Set new timeout - save after 1 second of inactivity
     this.autoSaveTimeouts[key] = setTimeout(() => {
       const content = this.getElementContent(element);
       this.updateChunkContent(chunkId, field, content);
       delete this.autoSaveTimeouts[key];
-    }, 1000); // Save after 1 second of inactivity
+    }, 1000);
   }
 
   /**
@@ -621,10 +544,6 @@ class GenerationUIController {
           <button class="btn btn-primary" onclick="generationUIController.generateAllContent()">
             <i data-lucide="sparkles"></i>
             Generate All Content
-          </button>
-          <button class="btn btn-success" onclick="generationUIController.saveAllChanges()" id="saveAllBtn" disabled>
-            <i data-lucide="save"></i>
-            Save All Changes
           </button>
         </div>
       </div>
@@ -886,12 +805,6 @@ class GenerationUIController {
       setTimeout(() => {
         this.updateGenerationUI();
       }, 2000);
-    }
-
-    // Enable/disable save all button based on unsaved changes
-    const saveAllBtn = document.getElementById("saveAllBtn");
-    if (saveAllBtn) {
-      saveAllBtn.disabled = this.unsavedChanges.size === 0;
     }
   }
 
@@ -1369,12 +1282,6 @@ class GenerationUIController {
     document.querySelectorAll(".dropdown-menu").forEach((menu) => {
       menu.classList.remove("show");
     });
-
-    // Remove toolbar
-    const toolbar = document.getElementById("editing-toolbar");
-    if (toolbar) {
-      toolbar.remove();
-    }
 
     console.log("GenerationUIController cleaned up");
   }

@@ -412,7 +412,7 @@ class CourseForgeApp {
       return;
     }
 
-    // Convert chunks to the format expected by HTMLExporter
+    // FIXED: Convert chunks to the format expected by slideRenderer (keep generatedContent property)
     const courseData = {
       course: {
         title: courseConfig.title || "Course Title",
@@ -425,7 +425,7 @@ class CourseForgeApp {
         title: chunk.title,
         slideType: chunk.slideType,
         order: chunk.order,
-        content: chunk.generatedContent, // This is the key fix!
+        generatedContent: chunk.generatedContent, // FIXED: Keep as generatedContent (was content)
         estimatedTime: chunk.estimatedTime,
         isLocked: chunk.isLocked,
         lastGenerated: chunk.lastGenerated,
@@ -438,7 +438,10 @@ class CourseForgeApp {
     };
 
     console.log("Course data for export:", courseData);
-    console.log("Sample slide content:", courseData.slides[0]?.content);
+    console.log(
+      "Sample slide generatedContent:",
+      courseData.slides[0]?.generatedContent
+    );
 
     // Create HTML exporter and generate HTML
     const htmlExporter = new HTMLExporter();
