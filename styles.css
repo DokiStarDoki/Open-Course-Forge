@@ -2,7 +2,6 @@
 .generation-stats {
   background: #f9fafb;
   border-radius: 0.75rem;
-  padding: 1.5rem;
   width: 80%;
 }
 
@@ -30,7 +29,7 @@
 
 .generation-actions {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   margin-bottom: 2rem;
 }
 
@@ -1069,6 +1068,7 @@ body {
   border: none;
   font-size: 0.875rem;
   text-decoration: none;
+  width: 45%;
 }
 
 .btn-primary {

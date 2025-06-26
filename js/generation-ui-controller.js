@@ -547,9 +547,6 @@ class GenerationUIController {
           </button>
         </div>
       </div>
-      <div class="generation-filters">
-        ${this.renderGenerationFilters()}
-      </div>
       <div class="slides-container">
         ${sortedChunks
           .map((chunk) => this.renderGenerationItem(chunk))
@@ -594,36 +591,36 @@ class GenerationUIController {
   /**
    * Render generation filters
    */
-  renderGenerationFilters() {
-    return `
-      <div class="filter-controls">
-        <div class="filter-group">
-          <label>Show:</label>
-          <select id="generationFilter" onchange="generationUIController.applyFilter(this.value)">
-            <option value="all">All Slides</option>
-            <option value="generated">Generated Only</option>
-            <option value="pending">Pending Only</option>
-            <option value="locked">Locked Only</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label>Type:</label>
-          <select id="typeFilter" onchange="generationUIController.applyFilter()">
-            <option value="all">All Types</option>
-            ${CONFIG.SLIDE_TYPES.map(
-              (type) => `<option value="${type.value}">${type.label}</option>`
-            ).join("")}
-          </select>
-        </div>
-        <div class="filter-group">
-          <button class="btn btn-secondary btn-sm" onclick="generationUIController.clearFilters()">
-            <i data-lucide="x"></i>
-            Clear Filters
-          </button>
-        </div>
-      </div>
-    `;
-  }
+  // renderGenerationFilters() {
+  //   return `
+  //     <div class="filter-controls">
+  //       <div class="filter-group">
+  //         <label>Show:</label>
+  //         <select id="generationFilter" onchange="generationUIController.applyFilter(this.value)">
+  //           <option value="all">All Slides</option>
+  //           <option value="generated">Generated Only</option>
+  //           <option value="pending">Pending Only</option>
+  //           <option value="locked">Locked Only</option>
+  //         </select>
+  //       </div>
+  //       <div class="filter-group">
+  //         <label>Type:</label>
+  //         <select id="typeFilter" onchange="generationUIController.applyFilter()">
+  //           <option value="all">All Types</option>
+  //           ${CONFIG.SLIDE_TYPES.map(
+  //             (type) => `<option value="${type.value}">${type.label}</option>`
+  //           ).join("")}
+  //         </select>
+  //       </div>
+  //       <div class="filter-group">
+  //         <button class="btn btn-secondary btn-sm" onclick="generationUIController.clearFilters()">
+  //           <i data-lucide="x"></i>
+  //           Clear Filters
+  //         </button>
+  //       </div>
+  //     </div>
+  //   `;
+  // }
 
   /**
    * Render generation item for each chunk
