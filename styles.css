@@ -69,6 +69,8 @@
 
 .chunk-info {
   flex: 1;
+  display: flex;
+  align-items: center;
 }
 
 .chunk-title {
@@ -77,10 +79,15 @@
   font-size: 1.25rem;
 }
 
+.chunk-selection {
+  margin-right: 2px;
+}
+
 .chunk-meta {
   display: flex;
   gap: 1rem;
   align-items: center;
+  margin-left: 0.75rem;
 }
 
 .slide-type-badge {
@@ -428,7 +435,7 @@
 
 .tab-panel {
   display: none;
-  padding: 1.5rem;
+  padding: 0rem 0.5rem 0.5rem 0.5rem;
 }
 
 .tab-panel.active {
