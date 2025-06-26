@@ -7,7 +7,7 @@ const CONFIG = {
   // ====== API PROVIDER TOGGLE ======
   // Set to true for ChatGPT API (secure, for real course data)
   // Set to false for OpenRouter/DeepSeek (free, for debugging)
-  USE_CHATGPT_API: false,
+  USE_CHATGPT_API: true,
 
   // File Upload Settings
   MAX_FILE_SIZE: 15 * 1024 * 1024, // 15MB in bytes

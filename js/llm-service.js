@@ -523,6 +523,25 @@ Please create 6-12 chunks that cover this material comprehensively. Each chunk s
 
 Use the XML format that matches the slide type:
 
+For "title":
+<content>
+<header>Course Title</header>
+<text>Course overview and introduction text</text>
+<audioScript>Script for audio narration</audioScript>
+</content>
+
+For "courseInfo":
+<content>
+<header>Course Information</header>
+<text>Course description</text>
+<duration>Estimated duration</duration>
+<audience>Target audience description</audience>
+<objective>Learning objective 1</objective>
+<objective>Learning objective 2</objective>
+<objective>Learning objective 3</objective>
+<audioScript>Script for audio narration</audioScript>
+</content>
+
 For "textAndImage":
 <content>
 <header>Slide title</header>
@@ -757,6 +776,10 @@ Please respond using the XML format specified for "${chunk.slideType}" slides.`;
 
       // Parse based on slide type
       switch (slideType) {
+        case "title":
+          return this.parseTitleXML(contentBlock);
+        case "courseInfo":
+          return this.parseCourseInfoXML(contentBlock);
         case "textAndImage":
           return this.parseTextAndImageXML(contentBlock);
         case "textAndBullets":
@@ -803,6 +826,31 @@ Please respond using the XML format specified for "${chunk.slideType}" slides.`;
       matches.push(match[1].trim());
     }
     return matches;
+  }
+
+  /**
+   * Parse title slide content
+   */
+  parseTitleXML(content) {
+    return {
+      header: this.extractXMLValue(content, "header") || "",
+      text: this.extractXMLValue(content, "text") || "",
+      audioScript: this.extractXMLValue(content, "audioScript") || "",
+    };
+  }
+
+  /**
+   * Parse course info slide content
+   */
+  parseCourseInfoXML(content) {
+    return {
+      header: this.extractXMLValue(content, "header") || "",
+      text: this.extractXMLValue(content, "text") || "",
+      duration: this.extractXMLValue(content, "duration") || "",
+      audience: this.extractXMLValue(content, "audience") || "",
+      objectives: this.extractXMLValues(content, "objective"),
+      audioScript: this.extractXMLValue(content, "audioScript") || "",
+    };
   }
 
   /**
