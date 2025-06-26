@@ -3,7 +3,7 @@
   background: #f9fafb;
   border-radius: 0.75rem;
   padding: 1.5rem;
-  margin-bottom: 2rem;
+  width: 80%;
 }
 
 .stats-grid {
@@ -65,6 +65,7 @@
   padding: 1.5rem;
   border-bottom: 1px solid #e5e7eb;
   background: #f9fafb;
+  width: 100%;
 }
 
 .chunk-info {

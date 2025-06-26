@@ -1,7 +1,7 @@
 /**
- * Course Forge MVP - LLM Service
- * Handles communication with AI models via OpenRouter API
- * FIXED: JSON parsing issues, performance improvements, better error handling
+ * Course Forge MVP - LLM Service (XML-BASED EXTRACTION)
+ * Handles communication with AI models using XML tags for reliable data extraction
+ * IMPROVED: Uses XML tags + regex instead of fragile JSON parsing
  */
 
 class LLMService {
@@ -34,7 +34,7 @@ class LLMService {
       this.isReady = true;
 
       if (CONFIG.DEBUG.ENABLED) {
-        console.log("LLMService initialized successfully");
+        console.log("LLMService initialized successfully (XML Mode)");
         console.log("API URL:", this.apiUrl);
         console.log("Using proxy:", this.isUsingProxy());
         console.log("Has API key:", !!this.apiKey);
@@ -91,7 +91,7 @@ class LLMService {
     if (!this.isDevelopment()) return;
 
     try {
-      // Wait for local config to load (similar to your game setup)
+      // Wait for local config to load
       await this.waitForLocalConfig();
 
       if (window.LOCAL_CONFIG && window.LOCAL_CONFIG.OPENROUTER_API_KEY) {
@@ -125,15 +125,11 @@ class LLMService {
   getAPIUrl() {
     if (this.isDevelopment()) {
       if (this.apiKey) {
-        // In development with local API key, use direct connection
         return "https://openrouter.ai/api/v1/chat/completions";
       } else {
-        // In development without API key, try to use a proxy if available
-        // You can update this URL to match your actual proxy deployment
         return "https://your-vercel-deployment.vercel.app/api/chat";
       }
     } else {
-      // Use relative proxy path for production
       return "/api/chat";
     }
   }
@@ -150,8 +146,6 @@ class LLMService {
    */
   validateSetup() {
     if (this.isUsingProxy()) {
-      // For proxy, we need to check if the proxy URL is accessible
-      // But we can't easily do this without making a request
       console.log("Using proxy URL:", this.apiUrl);
       return true;
     } else if (!this.apiKey) {
@@ -179,10 +173,9 @@ class LLMService {
       temperature: options.temperature || 0.7,
       top_p: options.topP || 0.9,
       stream: false,
-      // Add specific parameters to encourage better JSON formatting
       stop: options.stop || null,
-      presence_penalty: 0.1, // Encourage variety in responses
-      frequency_penalty: 0.1, // Reduce repetition
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1,
     };
 
     const requestOptions = {
@@ -217,7 +210,6 @@ class LLMService {
         const errorText = await response.text();
         let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
 
-        // Provide more specific error messages
         switch (response.status) {
           case 400:
             errorMessage = "Invalid request format. Please try again.";
@@ -266,10 +258,7 @@ class LLMService {
     } catch (error) {
       console.error("LLM request failed:", error);
 
-      // Enhanced error context
-      if (error.message.includes("JSON")) {
-        throw new Error(`AI response formatting error: ${error.message}`);
-      } else if (error.message.includes("timeout")) {
+      if (error.message.includes("timeout")) {
         throw new Error(
           "AI request timed out. Please try again with simpler content."
         );
@@ -284,7 +273,7 @@ class LLMService {
   }
 
   /**
-   * Generate content chunks from source material with retry logic
+   * Generate content chunks using XML tags for reliable extraction
    */
   async generateChunks(courseConfig) {
     const maxRetries = 2;
@@ -300,7 +289,7 @@ class LLMService {
           { role: "user", content: userPrompt },
         ];
 
-        // Adjust temperature based on attempt (more deterministic on retries)
+        // Adjust temperature based on attempt
         const temperature = attempt === 1 ? 0.3 : 0.1;
 
         const response = await this.makeRequest(messages, {
@@ -314,12 +303,13 @@ class LLMService {
 
         const content = response.choices[0].message.content;
 
-        // Log raw response for debugging
-        if (CONFIG.DEBUG.ENABLED) {
-          console.log(`Attempt ${attempt} - Raw AI response:`, content);
-        }
+        // ALWAYS LOG THE FULL RESPONSE
+        console.log(`=== FULL AI RESPONSE (ATTEMPT ${attempt}) ===`);
+        console.log("Response length:", content.length);
+        console.log("Response content:", content);
+        console.log("=== END FULL RESPONSE ===");
 
-        return this.parseChunkingResponse(content);
+        return this.parseChunkingResponseXML(content, attempt);
       } catch (error) {
         lastError = error;
         console.warn(`Chunking attempt ${attempt} failed:`, error.message);
@@ -328,7 +318,6 @@ class LLMService {
           console.log(
             `Retrying chunking (attempt ${attempt + 1}/${maxRetries})...`
           );
-          // Wait before retry
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }
@@ -340,7 +329,7 @@ class LLMService {
   }
 
   /**
-   * Generate content for a specific chunk
+   * Generate content for a specific chunk using XML tags
    */
   async generateSlideContent(chunk, courseConfig) {
     const systemPrompt = this.buildContentSystemPrompt();
@@ -362,7 +351,16 @@ class LLMService {
       }
 
       const content = response.choices[0].message.content;
-      return this.parseContentResponse(content, chunk.slideType);
+
+      // ALWAYS LOG CONTENT GENERATION RESPONSES
+      console.log("=== CONTENT GENERATION RESPONSE ===");
+      console.log("Chunk ID:", chunk.id);
+      console.log("Slide Type:", chunk.slideType);
+      console.log("Response length:", content.length);
+      console.log("Response content:", content);
+      console.log("=== END CONTENT RESPONSE ===");
+
+      return this.parseContentResponseXML(content, chunk.slideType);
     } catch (error) {
       console.error("Content generation failed:", error);
       throw new Error(`Content generation failed: ${error.message}`);
@@ -370,78 +368,68 @@ class LLMService {
   }
 
   /**
-   * Build system prompt for chunking with stronger JSON formatting instructions
+   * Build system prompt for chunking using XML tags
    */
   buildChunkingSystemPrompt() {
-    return `You are an expert instructional designer specializing in creating structured, engaging eLearning courses. Your task is to analyze source content and break it down into logical chunks that will become individual slides in a Rise 360-style course.
+    return `You are an expert instructional designer creating structured eLearning courses. Your task is to analyze source content and break it down into logical chunks for individual slides.
 
-CRITICAL: You MUST respond with ONLY a valid JSON array. No explanations, no markdown, no extra text - just the JSON array.
+IMPORTANT: You must respond using XML tags to structure your data. This format is much more reliable than JSON.
 
-Your response must be EXACTLY in this format:
-[
-  {
-    "title": "Clear descriptive title",
-    "slideType": "textAndImage",
-    "sourceContent": "relevant excerpt from source material",
-    "estimatedTime": "2 minutes",
-    "order": 0
-  }
-]
+For each chunk, use this EXACT format:
 
-IMPORTANT JSON RULES:
-- Use ONLY double quotes (") for all strings
-- NO escaped quotes (\") in string values
-- NO single quotes (') anywhere
-- NO trailing commas
-- Ensure proper array structure with square brackets []
-- Each object must have exactly these 5 properties: title, slideType, sourceContent, estimatedTime, order
+<chunk>
+<title>Clear descriptive title</title>
+<slideType>textAndImage</slideType>
+<sourceContent>Relevant excerpt from source material</sourceContent>
+<estimatedTime>2 minutes</estimatedTime>
+<order>0</order>
+</chunk>
 
-Available slide types (use EXACTLY these values):
-- "textAndImage": For concepts that benefit from visual support
-- "textAndBullets": For lists, steps, or key points
-- "iconsWithTitles": For 3-4 main principles or categories
-- "multipleChoice": For knowledge checks and assessments
-- "tabs": For comparing different approaches or roles
-- "flipCards": For definitions, terms, or before/after scenarios
-- "faq": For common questions and answers
-- "popups": For additional resources or deep-dive information
+Available slide types (use exactly these values):
+- textAndImage: For concepts that benefit from visual support
+- textAndBullets: For lists, steps, or key points  
+- iconsWithTitles: For 3-4 main principles or categories
+- multipleChoice: For knowledge checks and assessments
+- tabs: For comparing different approaches or roles
+- flipCards: For definitions, terms, or before/after scenarios
+- faq: For common questions and answers
+- popups: For additional resources or deep-dive information
 
 Chunking Guidelines:
 1. Create 5-8 chunks for optimal learning
 2. Each chunk should cover one main concept
 3. Include 1-2 knowledge checks (multipleChoice) every 3-4 content chunks
-4. Start with overview/introduction
-5. End with summary or next steps
-6. Vary slide types for engagement
-7. Keep estimatedTime as "1 minutes", "2 minutes", or "3 minutes"
-8. Set order as sequential numbers: 0, 1, 2, 3, etc.
+4. Start with overview/introduction, end with summary
+5. Vary slide types for engagement
+6. Keep estimatedTime as "1 minutes", "2 minutes", or "3 minutes"
+7. Set order as sequential numbers: 0, 1, 2, 3, etc.
 
-Example valid response:
-[
-  {
-    "title": "Introduction to Game Development",
-    "slideType": "textAndImage",
-    "sourceContent": "Game development combines creativity with technical skills...",
-    "estimatedTime": "2 minutes",
-    "order": 0
-  },
-  {
-    "title": "Key Game Design Principles",
-    "slideType": "textAndBullets", 
-    "sourceContent": "Essential principles include player engagement, iterative design...",
-    "estimatedTime": "3 minutes",
-    "order": 1
-  }
-]
+Example response format:
 
-Remember: Respond with ONLY the JSON array, nothing else.`;
+<chunk>
+<title>Introduction to Game Development</title>
+<slideType>textAndImage</slideType>
+<sourceContent>Game development combines creativity with technical skills to create interactive experiences...</sourceContent>
+<estimatedTime>2 minutes</estimatedTime>
+<order>0</order>
+</chunk>
+
+<chunk>
+<title>Key Game Design Principles</title>
+<slideType>textAndBullets</slideType>
+<sourceContent>Essential principles include player engagement, iterative design, user feedback...</sourceContent>
+<estimatedTime>3 minutes</estimatedTime>
+<order>1</order>
+</chunk>
+
+Remember: Use the XML format exactly as shown. Each chunk must be wrapped in <chunk></chunk> tags with all required fields.`;
   }
 
   /**
-   * Build user prompt with better structure for JSON response
+   * Build user prompt for chunking
    */
   buildChunkingUserPrompt(courseConfig) {
-    return `Please analyze the following course information and create a JSON array of chunks:
+    return `Please analyze the following course information and create chunks using the XML format:
 
 COURSE TITLE: ${courseConfig.title}
 
@@ -463,106 +451,139 @@ ${
   "Create an engaging, well-structured course that meets the learning objectives."
 }
 
-Return ONLY a valid JSON array of 5-8 chunks with the exact structure specified in the system prompt.`;
+Please respond with 5-8 chunks using the XML format specified in the system prompt.`;
   }
 
   /**
-   * Build system prompt for content generation
+   * Build system prompt for content generation using XML tags
    */
   buildContentSystemPrompt() {
-    return `You are an expert instructional designer creating content for a specific slide type in a Rise 360-style eLearning course. 
+    return `You are an expert instructional designer creating content for eLearning slides. You must use XML tags to structure your response.
 
-IMPORTANT: You must respond with ONLY a valid JSON object. No additional text, explanations, or markdown formatting.
-
-Your response must match the exact structure required for the slide type:
+Use the XML format that matches the slide type:
 
 For "textAndImage":
-{
-  "header": "Slide title",
-  "text": "Main content paragraph",
-  "image": "https://images.unsplash.com/photo-[relevant-image]?w=500&h=300&fit=crop",
-  "audioScript": "Script for audio narration"
-}
+<content>
+<header>Slide title</header>
+<text>Main content paragraph</text>
+<image>https://images.unsplash.com/photo-relevant-image?w=500&h=300&fit=crop</image>
+<audioScript>Script for audio narration</audioScript>
+</content>
 
 For "textAndBullets":
-{
-  "header": "Slide title", 
-  "text": "Introduction paragraph",
-  "bullets": ["Bullet point 1", "Bullet point 2", "Bullet point 3"],
-  "audioScript": "Script for audio narration"
-}
+<content>
+<header>Slide title</header>
+<text>Introduction paragraph</text>
+<bullet>Bullet point 1</bullet>
+<bullet>Bullet point 2</bullet>
+<bullet>Bullet point 3</bullet>
+<audioScript>Script for audio narration</audioScript>
+</content>
 
 For "iconsWithTitles":
-{
-  "header": "Slide title",
-  "icons": [
-    {"icon": "target", "title": "Title 1", "description": "Description 1"},
-    {"icon": "users", "title": "Title 2", "description": "Description 2"},
-    {"icon": "trending-up", "title": "Title 3", "description": "Description 3"}
-  ],
-  "audioScript": "Script for audio narration"
-}
+<content>
+<header>Slide title</header>
+<icon>
+<iconName>target</iconName>
+<title>Title 1</title>
+<description>Description 1</description>
+</icon>
+<icon>
+<iconName>users</iconName>
+<title>Title 2</title>
+<description>Description 2</description>
+</icon>
+<icon>
+<iconName>trending-up</iconName>
+<title>Title 3</title>
+<description>Description 3</description>
+</icon>
+<audioScript>Script for audio narration</audioScript>
+</content>
 
 For "multipleChoice":
-{
-  "question": "Question text",
-  "options": ["Option A", "Option B", "Option C", "Option D"],
-  "correctAnswer": 0,
-  "feedback": {
-    "correct": "Explanation for correct answer",
-    "incorrect": "Explanation and learning opportunity"
-  },
-  "audioScript": "Script for audio narration"
-}
+<content>
+<question>Question text</question>
+<option>Option A</option>
+<option>Option B</option>
+<option>Option C</option>
+<option>Option D</option>
+<correctAnswer>0</correctAnswer>
+<feedbackCorrect>Explanation for correct answer</feedbackCorrect>
+<feedbackIncorrect>Explanation and learning opportunity</feedbackIncorrect>
+<audioScript>Script for audio narration</audioScript>
+</content>
 
 For "tabs":
-[
-  {"title": "Tab 1", "content": "Content for tab 1"},
-  {"title": "Tab 2", "content": "Content for tab 2"},
-  {"title": "Tab 3", "content": "Content for tab 3"}
-]
+<content>
+<tab>
+<title>Tab 1</title>
+<tabContent>Content for tab 1</tabContent>
+</tab>
+<tab>
+<title>Tab 2</title>
+<tabContent>Content for tab 2</tabContent>
+</tab>
+<tab>
+<title>Tab 3</title>
+<tabContent>Content for tab 3</tabContent>
+</tab>
+</content>
 
 For "flipCards":
-[
-  {"front": "Term or concept", "back": "Definition or explanation"},
-  {"front": "Another term", "back": "Another explanation"}
-]
+<content>
+<card>
+<front>Term or concept</front>
+<back>Definition or explanation</back>
+</card>
+<card>
+<front>Another term</front>
+<back>Another explanation</back>
+</card>
+</content>
 
 For "faq":
-{
-  "header": "FAQ Section Title",
-  "items": [
-    {"question": "Question 1?", "answer": "Answer 1"},
-    {"question": "Question 2?", "answer": "Answer 2"}
-  ],
-  "audioScript": "Script for audio narration"
-}
+<content>
+<header>FAQ Section Title</header>
+<faqItem>
+<question>Question 1?</question>
+<answer>Answer 1</answer>
+</faqItem>
+<faqItem>
+<question>Question 2?</question>
+<answer>Answer 2</answer>
+</faqItem>
+<audioScript>Script for audio narration</audioScript>
+</content>
 
 For "popups":
-[
-  {"title": "Resource 1", "content": "Detailed content for popup 1"},
-  {"title": "Resource 2", "content": "Detailed content for popup 2"}
-]
+<content>
+<popup>
+<title>Resource 1</title>
+<popupContent>Detailed content for popup 1</popupContent>
+</popup>
+<popup>
+<title>Resource 2</title>
+<popupContent>Detailed content for popup 2</popupContent>
+</popup>
+</content>
 
-Content Guidelines:
-- Keep content concise and focused
+Guidelines:
 - Use professional, conversational tone
 - Include specific, actionable information
 - For images, use relevant Unsplash photo URLs
 - Audio scripts should be 15-30 seconds when read aloud
 - Make multiple choice questions scenario-based
-- Ensure flip cards have clear, useful definitions
+- Ensure content is concise and focused
 
-Remember: Respond with ONLY the JSON object, nothing else.`;
+Remember: Use the XML format exactly as shown for the specific slide type.`;
   }
 
   /**
    * Build user prompt for content generation
    */
   buildContentUserPrompt(chunk, courseConfig) {
-    return `Generate content for a "${
-      chunk.slideType
-    }" slide with the following details:
+    return `Generate content for a "${chunk.slideType}" slide using XML tags.
 
 SLIDE TITLE: ${chunk.title}
 
@@ -580,209 +601,289 @@ ${
   "Create engaging, practical content that helps learners achieve the objectives."
 }
 
-Create a JSON object with content specifically formatted for the "${
-      chunk.slideType
-    }" slide type.`;
+Please respond using the XML format specified for "${chunk.slideType}" slides.`;
   }
 
   /**
-   * Parse chunking response from AI with robust error handling
+   * Parse chunking response using XML regex extraction
    */
-  parseChunkingResponse(content) {
+  parseChunkingResponseXML(content, attempt = 1) {
     try {
-      if (CONFIG.DEBUG.ENABLED) {
-        console.log("Raw LLM response:", content);
+      console.log(`=== PARSING XML CHUNKS (Attempt ${attempt}) ===`);
+      console.log("Raw content:", content);
+
+      // Extract all chunk blocks using regex
+      const chunkMatches = content.match(/<chunk>([\s\S]*?)<\/chunk>/g);
+
+      if (!chunkMatches || chunkMatches.length === 0) {
+        console.warn("No <chunk> tags found, attempting fallback extraction");
+        return this.generateFallbackChunks(content);
       }
 
-      // Clean up the response - remove any markdown formatting and fix common issues
-      let cleanContent = content
-        .replace(/```json\s*|\s*```/g, "") // Remove markdown code blocks
-        .replace(/^[^[{]*/, "") // Remove any text before the JSON starts
-        .replace(/[^}\]]*$/, "") // Remove any text after the JSON ends
-        .trim();
+      console.log(`Found ${chunkMatches.length} chunk blocks`);
 
-      // Fix common JSON formatting issues from LLM responses
-      cleanContent = this.fixJsonFormatting(cleanContent);
+      const chunks = chunkMatches.map((chunkBlock, index) => {
+        console.log(`Processing chunk ${index}:`, chunkBlock);
 
-      if (CONFIG.DEBUG.ENABLED) {
-        console.log("Cleaned response:", cleanContent);
-      }
+        // Extract individual fields using regex
+        const chunk = {
+          title:
+            this.extractXMLValue(chunkBlock, "title") || `Chunk ${index + 1}`,
+          slideType:
+            this.extractXMLValue(chunkBlock, "slideType") || "textAndImage",
+          sourceContent:
+            this.extractXMLValue(chunkBlock, "sourceContent") || "",
+          estimatedTime:
+            this.extractXMLValue(chunkBlock, "estimatedTime") || "2 minutes",
+          order: parseInt(this.extractXMLValue(chunkBlock, "order")) || index,
+        };
 
-      // Attempt to parse
-      let chunks;
-      try {
-        chunks = JSON.parse(cleanContent);
-      } catch (parseError) {
-        // Try additional cleanup if first parse fails
-        console.warn(
-          "Initial JSON parse failed, attempting advanced cleanup..."
-        );
-        cleanContent = this.advancedJsonCleanup(cleanContent);
-        chunks = JSON.parse(cleanContent);
-      }
-
-      if (!Array.isArray(chunks)) {
-        throw new Error("Response is not an array");
-      }
-
-      // Validate and enhance chunks
-      return chunks.map((chunk, index) => {
-        // Validate required fields
-        if (!chunk.title) {
-          console.warn(`Chunk ${index} missing title, using default`);
-          chunk.title = `Chunk ${index + 1}`;
-        }
-
+        // Validate slide type
         if (
-          !chunk.slideType ||
           !CONFIG.SLIDE_TYPES.some((type) => type.value === chunk.slideType)
         ) {
           console.warn(
-            `Chunk ${index} has invalid slideType: ${chunk.slideType}, using default`
+            `Invalid slide type "${chunk.slideType}", using textAndImage`
           );
           chunk.slideType = "textAndImage";
         }
 
-        return {
+        // Create final chunk object
+        const finalChunk = {
           id: `chunk-${Date.now()}-${index}-${Math.floor(
             Math.random() * 1000
           )}`,
           title: chunk.title,
           slideType: chunk.slideType,
-          sourceContent: chunk.sourceContent || "",
-          estimatedTime: chunk.estimatedTime || "2 minutes",
-          order: typeof chunk.order === "number" ? chunk.order : index,
+          sourceContent: chunk.sourceContent,
+          estimatedTime: chunk.estimatedTime,
+          order: chunk.order,
           isLocked: false,
           generatedContent: null,
           createdAt: new Date().toISOString(),
         };
-      });
-    } catch (error) {
-      console.error("Failed to parse chunking response:", error);
-      console.error("Original content:", content);
 
-      // Return a fallback response instead of throwing
+        console.log(`Processed chunk ${index}:`, finalChunk);
+        return finalChunk;
+      });
+
+      console.log(`=== SUCCESSFULLY PARSED ${chunks.length} CHUNKS ===`);
+      return chunks;
+    } catch (error) {
+      console.error("XML chunk parsing failed:", error);
+      console.error("Original content:", content);
       return this.generateFallbackChunks(content);
     }
   }
 
   /**
-   * Fix common JSON formatting issues from LLM responses
+   * Parse content response using XML regex extraction
    */
-  fixJsonFormatting(content) {
-    return (
-      content
-        // Fix escaped quotes in JSON values
-        .replace(/\\"/g, '"')
-        .replace(/\\'/g, "'")
-
-        // Fix missing commas between objects
-        .replace(/}\s*{/g, "},{")
-
-        // Fix trailing commas
-        .replace(/,(\s*[}\]])/g, "$1")
-
-        // Fix single quotes to double quotes for property names
-        .replace(/'([^']+)':/g, '"$1":')
-
-        // Fix unescaped quotes within string values
-        .replace(/"([^"]*)"([^"]*)"([^"]*)":/g, (match, p1, p2, p3) => {
-          return `"${p1}${p2}${p3}":`;
-        })
-
-        // Remove any null bytes or other problematic characters
-        .replace(/\0/g, "")
-        .replace(/[\x00-\x1F\x7F]/g, "")
-    );
-  }
-
-  /**
-   * Advanced JSON cleanup for severely malformed responses
-   */
-  advancedJsonCleanup(content) {
+  parseContentResponseXML(content, slideType) {
     try {
-      // Try to extract JSON objects using regex
-      const objectMatches = content.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+      console.log("=== PARSING XML CONTENT ===");
+      console.log("Slide type:", slideType);
+      console.log("Raw content:", content);
 
-      if (objectMatches && objectMatches.length > 0) {
-        const cleanObjects = objectMatches.map((obj) => {
-          // Clean each object individually
-          return obj
-            .replace(/\\"/g, '"')
-            .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, '$1"$2":') // Add quotes to property names
-            .replace(/:\s*'([^']*)'/g, ': "$1"') // Convert single quotes to double quotes
-            .replace(/,(\s*[}\]])/g, "$1"); // Remove trailing commas
-        });
-
-        return "[" + cleanObjects.join(",") + "]";
+      // Extract content block
+      const contentMatch = content.match(/<content>([\s\S]*?)<\/content>/);
+      if (!contentMatch) {
+        throw new Error("No <content> tag found in response");
       }
 
-      // If regex approach fails, try line-by-line reconstruction
-      return this.reconstructJson(content);
+      const contentBlock = contentMatch[1];
+      console.log("Content block:", contentBlock);
+
+      // Parse based on slide type
+      switch (slideType) {
+        case "textAndImage":
+          return this.parseTextAndImageXML(contentBlock);
+        case "textAndBullets":
+          return this.parseTextAndBulletsXML(contentBlock);
+        case "iconsWithTitles":
+          return this.parseIconsWithTitlesXML(contentBlock);
+        case "multipleChoice":
+          return this.parseMultipleChoiceXML(contentBlock);
+        case "tabs":
+          return this.parseTabsXML(contentBlock);
+        case "flipCards":
+          return this.parseFlipCardsXML(contentBlock);
+        case "faq":
+          return this.parseFaqXML(contentBlock);
+        case "popups":
+          return this.parsePopupsXML(contentBlock);
+        default:
+          throw new Error(`Unsupported slide type: ${slideType}`);
+      }
     } catch (error) {
-      console.error("Advanced cleanup failed:", error);
-      throw new Error("Could not repair malformed JSON response");
+      console.error("XML content parsing failed:", error);
+      console.error("Content:", content);
+      throw new Error(`Failed to parse content: ${error.message}`);
     }
   }
 
   /**
-   * Reconstruct JSON from severely damaged response
+   * Extract value from XML using regex
    */
-  reconstructJson(content) {
-    const lines = content
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line);
-    const objects = [];
-    let currentObj = {};
-    let inObject = false;
-
-    for (const line of lines) {
-      if (line.includes("{") || line.includes('"title"')) {
-        if (inObject && Object.keys(currentObj).length > 0) {
-          objects.push(currentObj);
-        }
-        currentObj = {};
-        inObject = true;
-      }
-
-      // Extract key-value pairs
-      const keyValueMatch = line.match(/"?([^":\s]+)"?\s*:\s*"?([^",}]+)"?/);
-      if (keyValueMatch && inObject) {
-        const [, key, value] = keyValueMatch;
-        currentObj[key.replace(/"/g, "")] = value
-          .replace(/"/g, "")
-          .replace(/,$/, "");
-      }
-
-      if (line.includes("}")) {
-        if (Object.keys(currentObj).length > 0) {
-          objects.push(currentObj);
-        }
-        inObject = false;
-      }
-    }
-
-    return JSON.stringify(objects);
+  extractXMLValue(content, tagName) {
+    const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "s");
+    const match = content.match(regex);
+    return match ? match[1].trim() : null;
   }
 
   /**
-   * Generate fallback chunks when parsing completely fails
+   * Extract multiple XML values (for arrays)
+   */
+  extractXMLValues(content, tagName) {
+    const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "gs");
+    const matches = [];
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      matches.push(match[1].trim());
+    }
+    return matches;
+  }
+
+  /**
+   * Parse text and image content
+   */
+  parseTextAndImageXML(content) {
+    return {
+      header: this.extractXMLValue(content, "header") || "",
+      text: this.extractXMLValue(content, "text") || "",
+      image:
+        this.extractXMLValue(content, "image") ||
+        "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=500&h=300&fit=crop",
+      audioScript: this.extractXMLValue(content, "audioScript") || "",
+    };
+  }
+
+  /**
+   * Parse text and bullets content
+   */
+  parseTextAndBulletsXML(content) {
+    return {
+      header: this.extractXMLValue(content, "header") || "",
+      text: this.extractXMLValue(content, "text") || "",
+      bullets: this.extractXMLValues(content, "bullet"),
+      audioScript: this.extractXMLValue(content, "audioScript") || "",
+    };
+  }
+
+  /**
+   * Parse icons with titles content
+   */
+  parseIconsWithTitlesXML(content) {
+    const iconBlocks = content.match(/<icon>([\s\S]*?)<\/icon>/g) || [];
+    const icons = iconBlocks.map((block) => ({
+      icon: this.extractXMLValue(block, "iconName") || "circle",
+      title: this.extractXMLValue(block, "title") || "",
+      description: this.extractXMLValue(block, "description") || "",
+    }));
+
+    return {
+      header: this.extractXMLValue(content, "header") || "",
+      icons: icons,
+      audioScript: this.extractXMLValue(content, "audioScript") || "",
+    };
+  }
+
+  /**
+   * Parse multiple choice content
+   */
+  parseMultipleChoiceXML(content) {
+    return {
+      question: this.extractXMLValue(content, "question") || "",
+      options: this.extractXMLValues(content, "option"),
+      correctAnswer:
+        parseInt(this.extractXMLValue(content, "correctAnswer")) || 0,
+      feedback: {
+        correct: this.extractXMLValue(content, "feedbackCorrect") || "Correct!",
+        incorrect:
+          this.extractXMLValue(content, "feedbackIncorrect") ||
+          "Not quite right.",
+      },
+      audioScript: this.extractXMLValue(content, "audioScript") || "",
+    };
+  }
+
+  /**
+   * Parse tabs content
+   */
+  parseTabsXML(content) {
+    const tabBlocks = content.match(/<tab>([\s\S]*?)<\/tab>/g) || [];
+    return tabBlocks.map((block) => ({
+      title: this.extractXMLValue(block, "title") || "",
+      content: this.extractXMLValue(block, "tabContent") || "",
+    }));
+  }
+
+  /**
+   * Parse flip cards content
+   */
+  parseFlipCardsXML(content) {
+    const cardBlocks = content.match(/<card>([\s\S]*?)<\/card>/g) || [];
+    return cardBlocks.map((block) => ({
+      front: this.extractXMLValue(block, "front") || "",
+      back: this.extractXMLValue(block, "back") || "",
+    }));
+  }
+
+  /**
+   * Parse FAQ content
+   */
+  parseFaqXML(content) {
+    const faqBlocks = content.match(/<faqItem>([\s\S]*?)<\/faqItem>/g) || [];
+    const items = faqBlocks.map((block) => ({
+      question: this.extractXMLValue(block, "question") || "",
+      answer: this.extractXMLValue(block, "answer") || "",
+    }));
+
+    return {
+      header: this.extractXMLValue(content, "header") || "",
+      items: items,
+      audioScript: this.extractXMLValue(content, "audioScript") || "",
+    };
+  }
+
+  /**
+   * Parse popups content
+   */
+  parsePopupsXML(content) {
+    const popupBlocks = content.match(/<popup>([\s\S]*?)<\/popup>/g) || [];
+    return popupBlocks.map((block) => ({
+      title: this.extractXMLValue(block, "title") || "",
+      content: this.extractXMLValue(block, "popupContent") || "",
+    }));
+  }
+
+  /**
+   * Generate fallback chunks when parsing fails
    */
   generateFallbackChunks(originalContent) {
-    console.warn("Generating fallback chunks due to parsing failure");
+    console.warn("🔄 Generating fallback chunks due to parsing failure");
 
-    // Try to extract at least the titles from the malformed response
-    const titleMatches = originalContent.match(/"title":\s*"([^"]+)"/g);
+    // Try to extract titles using more flexible regex
+    const titleMatches = originalContent.match(
+      /(?:title[">:\s]*)(.*?)(?:[<\n]|$)/gi
+    );
     const titles = titleMatches
-      ? titleMatches.map((match) => match.match(/"title":\s*"([^"]+)"/)[1])
+      ? titleMatches
+          .map((match) =>
+            match
+              .replace(/title[">:\s]*/i, "")
+              .replace(/[<\n].*$/, "")
+              .trim()
+          )
+          .filter((title) => title.length > 0 && title.length < 100)
       : [];
 
     if (titles.length > 0) {
-      return titles.map((title, index) => ({
+      console.log("Creating fallback chunks from extracted titles:", titles);
+      return titles.slice(0, 8).map((title, index) => ({
         id: `fallback-chunk-${Date.now()}-${index}`,
         title: title,
-        slideType: "textAndImage",
+        slideType: index % 4 === 3 ? "multipleChoice" : "textAndImage", // Add some variety
         sourceContent: "Content extracted from malformed AI response",
         estimatedTime: "2 minutes",
         order: index,
@@ -793,10 +894,11 @@ Create a JSON object with content specifically formatted for the "${
     }
 
     // Last resort: create generic chunks
+    console.warn("No titles found, creating generic fallback chunks");
     return [
       {
         id: `fallback-chunk-${Date.now()}-0`,
-        title: "Introduction",
+        title: "Course Introduction",
         slideType: "textAndImage",
         sourceContent: "AI response parsing failed - please edit this chunk",
         estimatedTime: "2 minutes",
@@ -818,8 +920,8 @@ Create a JSON object with content specifically formatted for the "${
       },
       {
         id: `fallback-chunk-${Date.now()}-2`,
-        title: "Summary",
-        slideType: "textAndImage",
+        title: "Knowledge Check",
+        slideType: "multipleChoice",
         sourceContent: "AI response parsing failed - please edit this chunk",
         estimatedTime: "2 minutes",
         order: 2,
@@ -827,52 +929,18 @@ Create a JSON object with content specifically formatted for the "${
         generatedContent: null,
         createdAt: new Date().toISOString(),
       },
+      {
+        id: `fallback-chunk-${Date.now()}-3`,
+        title: "Course Summary",
+        slideType: "textAndImage",
+        sourceContent: "AI response parsing failed - please edit this chunk",
+        estimatedTime: "2 minutes",
+        order: 3,
+        isLocked: false,
+        generatedContent: null,
+        createdAt: new Date().toISOString(),
+      },
     ];
-  }
-
-  /**
-   * Parse content response from AI
-   */
-  parseContentResponse(content, slideType) {
-    try {
-      // Clean up the response
-      const cleanContent = content.replace(/```json\s*|\s*```/g, "").trim();
-
-      const parsedContent = JSON.parse(cleanContent);
-
-      // Validate the structure based on slide type
-      this.validateContentStructure(parsedContent, slideType);
-
-      return parsedContent;
-    } catch (error) {
-      console.error("Failed to parse content response:", error);
-      console.error("Raw response:", content);
-      throw new Error(`Invalid content response format: ${error.message}`);
-    }
-  }
-
-  /**
-   * Validate content structure
-   */
-  validateContentStructure(content, slideType) {
-    const requiredFields = {
-      textAndImage: ["header", "text", "image"],
-      textAndBullets: ["header", "text", "bullets"],
-      iconsWithTitles: ["header", "icons"],
-      multipleChoice: ["question", "options", "correctAnswer", "feedback"],
-      tabs: [], // Array format
-      flipCards: [], // Array format
-      faq: ["header", "items"],
-      popups: [], // Array format
-    };
-
-    const required = requiredFields[slideType] || [];
-
-    for (const field of required) {
-      if (!content.hasOwnProperty(field)) {
-        throw new Error(`Missing required field: ${field}`);
-      }
-    }
   }
 
   /**
@@ -891,6 +959,7 @@ Create a JSON object with content specifically formatted for the "${
       apiUrl: this.apiUrl,
       usingProxy: this.isUsingProxy(),
       hasApiKey: !!this.apiKey,
+      extractionMethod: "XML with regex",
     };
   }
 }
