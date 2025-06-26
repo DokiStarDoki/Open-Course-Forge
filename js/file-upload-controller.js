@@ -1,5 +1,5 @@
 /**
- * Course Forge MVP - File Upload Controller (FIXED RACE CONDITION)
+ * Course Forge MVP - File Upload Controller (FIXED JSON LOADING)
  * Handles all file upload functionality and UI management
  */
 
@@ -117,12 +117,19 @@ class FileUploadController {
       this.combineSourceContent();
     });
 
-    // Course file loading
+    // FIXED: Course file loading with proper event handler
     const courseFileInput = document.getElementById("courseFileInput");
     if (courseFileInput) {
       const handler = (e) => {
+        console.log(
+          "Course file input changed:",
+          e.target.files.length,
+          "files"
+        );
         if (e.target.files.length > 0) {
-          this.loadExistingCourse(e.target.files[0]);
+          this.loadCourseFromFile(e.target.files[0]);
+          // Clear the input so the same file can be loaded again
+          e.target.value = "";
         }
       };
       courseFileInput.addEventListener("change", handler);
@@ -131,6 +138,10 @@ class FileUploadController {
         event: "change",
         handler,
       });
+
+      console.log("Course file input event listener attached");
+    } else {
+      console.warn("courseFileInput element not found");
     }
 
     // ADDED: Update UI when component initializes
@@ -200,15 +211,27 @@ class FileUploadController {
 
           const processedFile = await FileProcessor.processFile(file);
 
-          // Add metadata
-          const fileData = {
-            ...processedFile,
-            id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            uploadedAt: new Date().toISOString(),
-          };
+          // FIXED: Handle course files properly
+          if (processedFile.type === "course") {
+            // If it's a course file, load it instead of adding to uploaded files
+            await this.loadCourseFromProcessedFile(processedFile);
+            results.successful.push({
+              ...processedFile,
+              action: "loaded_as_course",
+            });
+          } else {
+            // Add metadata for content files
+            const fileData = {
+              ...processedFile,
+              id: `file-${Date.now()}-${Math.random()
+                .toString(36)
+                .substr(2, 9)}`,
+              uploadedAt: new Date().toISOString(),
+            };
 
-          uploadedFiles.push(fileData);
-          results.successful.push(fileData);
+            uploadedFiles.push(fileData);
+            results.successful.push(fileData);
+          }
         } catch (error) {
           console.error(`Error processing ${file.name}:`, error);
           results.failed.push({
@@ -218,8 +241,9 @@ class FileUploadController {
         }
       }
 
-      // Update state with all processed files
-      this.stateManager.setState("courseConfig.uploadedFiles", uploadedFiles);
+      // Update state with content files only (course files are handled separately)
+      const contentFiles = uploadedFiles.filter((f) => f.type === "content");
+      this.stateManager.setState("courseConfig.uploadedFiles", contentFiles);
 
       // FIXED: Ensure clean status transition
       await this.showProcessingResultsWithCleanTransition(results);
@@ -250,9 +274,16 @@ class FileUploadController {
     const messages = [];
 
     if (results.successful.length > 0) {
-      messages.push(
-        `✅ ${results.successful.length} files processed successfully`
+      const courseLoaded = results.successful.some(
+        (f) => f.action === "loaded_as_course"
       );
+      if (courseLoaded) {
+        messages.push("✅ Course loaded successfully");
+      } else {
+        messages.push(
+          `✅ ${results.successful.length} files processed successfully`
+        );
+      }
     }
     if (results.failed.length > 0) {
       messages.push(`❌ ${results.failed.length} files failed`);
@@ -449,49 +480,129 @@ class FileUploadController {
   }
 
   /**
-   * Load existing course from file with FIXED status management
+   * FIXED: Load course from file with proper error handling and status management
    */
-  async loadExistingCourse(file) {
+  async loadCourseFromFile(file) {
+    console.log("Loading course from file:", file.name);
+
     try {
       StatusManager.clearQueue();
       StatusManager.hide();
       await this.delay(50);
 
-      StatusManager.showLoading("Loading course...");
+      StatusManager.showLoading(`Loading course from ${file.name}...`);
 
       const processedFile = await FileProcessor.processFile(file);
-
-      if (processedFile.type !== "course") {
-        throw new Error("Invalid course file format");
-      }
-
-      const success = this.stateManager.loadFromCourseData(processedFile.data);
-
-      if (success) {
-        StatusManager.hide();
-        await this.delay(50);
-        StatusManager.showSuccess(`Course loaded: ${file.name}`);
-        this.eventSystem.emit("course:loaded", { filename: file.name });
-      } else {
-        throw new Error("Failed to load course data");
-      }
+      await this.loadCourseFromProcessedFile(processedFile);
     } catch (error) {
-      console.error("Error loading course:", error);
+      console.error("Error loading course from file:", error);
       StatusManager.hide();
       await this.delay(50);
       StatusManager.showError(`Error loading course: ${error.message}`);
-      this.eventSystem.emit("course:load-failed", { error: error.message });
+      this.eventSystem.emit("course:load-failed", {
+        error: error.message,
+        filename: file.name,
+      });
     }
   }
 
   /**
-   * Trigger course file selection
+   * FIXED: Load course from processed file data
    */
-  loadExistingCourse() {
+  async loadCourseFromProcessedFile(processedFile) {
+    console.log("Loading course from processed file:", processedFile);
+
+    if (processedFile.type !== "course") {
+      throw new Error("Invalid course file format - expected course data");
+    }
+
+    if (!processedFile.data) {
+      throw new Error("No course data found in file");
+    }
+
+    // Validate course data structure
+    if (!this.validateCourseData(processedFile.data)) {
+      throw new Error("Invalid course data structure");
+    }
+
+    console.log("Course data validation passed, loading into state...");
+
+    const success = this.stateManager.loadFromCourseData(processedFile.data);
+
+    if (success) {
+      StatusManager.hide();
+      await this.delay(50);
+      StatusManager.showSuccess(`Course loaded: ${processedFile.filename}`);
+
+      this.eventSystem.emit("course:loaded", {
+        filename: processedFile.filename,
+        courseTitle:
+          processedFile.data.courseConfig?.title || "Untitled Course",
+      });
+
+      // Force UI updates
+      this.updateUploadedFilesUI();
+
+      // Trigger form population
+      if (window.app && window.app.populateFormFromState) {
+        window.app.populateFormFromState();
+      }
+
+      console.log("Course loaded successfully");
+    } else {
+      throw new Error("Failed to load course data into application state");
+    }
+  }
+
+  /**
+   * ADDED: Validate course data structure
+   */
+  validateCourseData(data) {
+    if (!data || typeof data !== "object") {
+      console.error("Course data is not an object:", data);
+      return false;
+    }
+
+    // Check for required properties
+    const requiredKeys = ["courseConfig"];
+    for (const key of requiredKeys) {
+      if (!data[key]) {
+        console.error(`Missing required course data key: ${key}`);
+        return false;
+      }
+    }
+
+    // Validate courseConfig structure
+    if (!data.courseConfig.title) {
+      console.error("Course config missing title");
+      return false;
+    }
+
+    console.log("Course data validation passed");
+    return true;
+  }
+
+  /**
+   * FIXED: Trigger course file selection (this is the method called by the Load Course button)
+   */
+  triggerCourseLoad() {
+    console.log("Triggering course load file picker...");
     const courseFileInput = document.getElementById("courseFileInput");
     if (courseFileInput) {
       courseFileInput.click();
+      console.log("Course file input clicked");
+    } else {
+      console.error("courseFileInput element not found");
+      StatusManager.showError("Course file input not found");
     }
+  }
+
+  /**
+   * DEPRECATED: Legacy method name - kept for backward compatibility
+   */
+  loadExistingCourse() {
+    console.log("loadExistingCourse called - delegating to triggerCourseLoad");
+    this.triggerCourseLoad();
   }
 
   /**
