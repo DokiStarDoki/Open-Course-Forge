@@ -367,12 +367,12 @@ class CourseForgeApp {
   }
 
   /**
-   * Export course as JSON
+   * Export course as JSON (FIXED - Always use state manager format for save/load compatibility)
    */
   exportCourseJson() {
-    const courseData = this.contentGenerator
-      ? this.contentGenerator.exportGeneratedContent()
-      : this.stateManager.exportCourseData();
+    // ALWAYS use state manager format for JSON exports
+    // This ensures the exported JSON can be loaded back into Course Forge
+    const courseData = this.stateManager.exportCourseData();
 
     const jsonString = JSON.stringify(courseData, null, 2);
     const timestamp = new Date().toISOString().slice(0, 10);
@@ -380,6 +380,10 @@ class CourseForgeApp {
 
     FileProcessor.downloadAsFile(jsonString, filename, "application/json");
     StatusManager.showSuccess("Course exported as JSON");
+
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log("Course JSON exported in state manager format:", courseData);
+    }
   }
 
   /**
