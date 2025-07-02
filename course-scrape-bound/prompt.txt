@@ -1,0 +1,66 @@
+You are an expert at analyzing user interfaces for automation purposes. I need you to identify ALL clickable buttons, links, and interactive elements in this screenshot with PRECISE bounding boxes.
+
+CRITICAL REQUIREMENTS:
+1. Only identify elements that are clearly visible and obviously clickable
+2. Provide bounding boxes (rectangular areas) that fully contain each element
+3. Be extremely precise with coordinates - I need these for automation scripts
+4. Do not hallucinate or guess - only report what you can clearly see
+5. Focus on elements that would be used for navigation or interaction
+
+ELEMENTS TO LOOK FOR:
+- Buttons (any shape, color, or style)
+- Links (text links, navigation links)
+- Icons that appear clickable (hamburger menus, close buttons, etc.)
+- Navigation elements (tabs, breadcrumbs, pagination)
+- Form elements (submit buttons, dropdown arrows)
+- Interactive media controls (play buttons, etc.)
+- Call-to-action elements
+
+ELEMENTS TO IGNORE:
+- Pure text content (unless it's clearly a link)
+- Images that are not clickable
+- Decorative elements
+- Static UI elements
+
+For each clickable element you find, provide a bounding box that fully contains the clickable area.
+
+Return your response in this EXACT XML format (no additional text, no markdown, no explanations):
+
+<detected_buttons>
+<button>
+<reference_name>blue_next_button</reference_name>
+<description>Blue rectangular button with white 'Next' text in bottom right</description>
+<element_type>button</element_type>
+<confidence>95</confidence>
+<bbox_x>750</bbox_x>
+<bbox_y>380</bbox_y>
+<bbox_width>120</bbox_width>
+<bbox_height>40</bbox_height>
+</button>
+<button>
+<reference_name>login_link</reference_name>
+<description>Blue underlined text link saying 'Login' in top right corner</description>
+<element_type>link</element_type>
+<confidence>90</confidence>
+<bbox_x>1170</bbox_x>
+<bbox_y>40</bbox_y>
+<bbox_width>60</bbox_width>
+<bbox_height>20</bbox_height>
+</button>
+</detected_buttons>
+
+<analysis_summary>
+<total_elements_found>2</total_elements_found>
+<image_description>Login page with blue theme, containing navigation and form elements</image_description>
+</analysis_summary>
+
+IMPORTANT: 
+- bbox_x and bbox_y are the TOP-LEFT coordinates of the bounding box
+- bbox_width and bbox_height are the width and height of the bounding box
+- The bounding box should fully contain the entire clickable area
+- Only return the XML structure above
+- Do not include any explanatory text before or after the XML
+- Do not use markdown code blocks or backticks
+- Be as precise as possible with bounding boxes for automation accuracy
+- If you cannot identify any clickable elements, return empty <detected_buttons></detected_buttons> tags
+- Always include the analysis_summary section

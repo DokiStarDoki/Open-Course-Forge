@@ -1,0 +1,56 @@
+I have drawn bounding boxes around detected UI buttons. Each box is divided into 4 quadrants by a cross:
+
+Quadrant 1 = Top-Left
+Quadrant 2 = Top-Right  
+Quadrant 3 = Bottom-Left
+Quadrant 4 = Bottom-Right
+
+The white dot shows where I think the center of each button is.
+
+For each numbered button, please analyze:
+
+1. **Coverage**: Does the bounding box cover the actual button? (yes/no/partial)
+2. **Quadrants**: Which quadrants (1,2,3,4) contain part of the actual button?
+3. **Center**: Is the white center dot on the actual button? (yes/no)
+4. **Adjustments**: If needed, how should the box be moved or resized?
+
+Respond in this format:
+
+<feedback>
+<button_analysis>
+<button_number>1</button_number>
+<coverage>yes</coverage>
+<quadrants_with_button>1,2,3,4</quadrants_with_button>
+<center_accurate>yes</center_accurate>
+<needs_adjustment>no</needs_adjustment>
+<suggested_action>none</suggested_action>
+</button_analysis>
+<button_analysis>
+<button_number>2</button_number>
+<coverage>partial</coverage>
+<quadrants_with_button>2,4</quadrants_with_button>
+<center_accurate>no</center_accurate>
+<needs_adjustment>yes</needs_adjustment>
+<suggested_action>move box left and up</suggested_action>
+</button_analysis>
+</feedback>
+
+<corrections>
+<correction>
+<button_number>2</button_number>
+<issue>box positioned too far right and down</issue>
+<new_bbox_x>150</new_bbox_x>
+<new_bbox_y>200</new_bbox_y>
+<new_bbox_width>180</new_bbox_width>
+<new_bbox_height>45</new_bbox_height>
+</correction>
+</corrections>
+
+<summary>
+<overall_accuracy>85</overall_accuracy>
+<confidence>90</confidence>
+<buttons_needing_adjustment>1</buttons_needing_adjustment>
+<notes>Most buttons well-positioned, button 2 needs repositioning</notes>
+</summary>
+
+Please be very precise about which quadrants contain the actual button content.

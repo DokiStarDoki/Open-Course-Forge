@@ -1,0 +1,63 @@
+You are an expert at analyzing user interfaces for automation purposes. I need you to identify ALL clickable buttons, links, and interactive elements in this screenshot with PRECISE coordinates.
+
+CRITICAL REQUIREMENTS:
+1. Only identify elements that are clearly visible and obviously clickable
+2. Provide the exact CENTER coordinates in pixels for each element
+3. Be extremely precise with coordinates - I need these for automation scripts
+4. Do not hallucinate or guess - only report what you can clearly see
+5. Focus on elements that would be used for navigation or interaction
+
+ELEMENTS TO LOOK FOR:
+- Buttons (any shape, color, or style)
+- Links (text links, navigation links)
+- Icons that appear clickable (hamburger menus, close buttons, etc.)
+- Navigation elements (tabs, breadcrumbs, pagination)
+- Form elements (submit buttons, dropdown arrows)
+- Interactive media controls (play buttons, etc.)
+- Call-to-action elements
+
+ELEMENTS TO IGNORE:
+- Pure text content (unless it's clearly a link)
+- Images that are not clickable
+- Decorative elements
+- Static UI elements
+
+For each clickable element you find, provide the information in XML format.
+
+Return your response in this EXACT XML format (no additional text, no markdown, no explanations):
+
+<detected_buttons>
+<button>
+<reference_name>blue_next_button</reference_name>
+<description>Blue rectangular button with white 'Next' text in bottom right</description>
+<element_type>button</element_type>
+<confidence>95</confidence>
+<center_x>850</center_x>
+<center_y>400</center_y>
+<width>120</width>
+<height>40</height>
+</button>
+<button>
+<reference_name>login_link</reference_name>
+<description>Blue underlined text link saying 'Login' in top right corner</description>
+<element_type>link</element_type>
+<confidence>90</confidence>
+<center_x>1200</center_x>
+<center_y>50</center_y>
+<width>60</width>
+<height>20</height>
+</button>
+</detected_buttons>
+
+<analysis_summary>
+<total_elements_found>2</total_elements_found>
+<image_description>Login page with blue theme, containing navigation and form elements</image_description>
+</analysis_summary>
+
+IMPORTANT: 
+- Only return the XML structure above
+- Do not include any explanatory text before or after the XML
+- Do not use markdown code blocks or backticks
+- Be as precise as possible with coordinates for automation accuracy
+- If you cannot identify any clickable elements, return empty <detected_buttons></detected_buttons> tags
+- Always include the analysis_summary section

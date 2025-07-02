@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPT-4 Vision Button Detector</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="main-card">
+        <h1 class="title">
+          <svg
+            class="title-icon"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            ></path>
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+            ></path>
+          </svg>
+          GPT-4 Vision Button Detector
+        </h1>
+
+        <div class="info-banner">
+          <h3>Using GPT-4 Vision API</h3>
+          <p>
+            This uses OpenAI's GPT-4V with your existing API key. The prompt is
+            loaded from prompt.txt for easy customization!
+          </p>
+          <p class="small-text">
+            Make sure prompt.txt is in the same folder as this HTML file.
+          </p>
+        </div>
+
+        <!-- Debug Toggle Section -->
+        <div class="debug-section">
+          <div class="debug-toggle">
+            <input type="checkbox" id="debugToggle" />
+            <label for="debugToggle">🔍 Enable Debug Mode</label>
+          </div>
+          <p class="debug-help">
+            Debug mode shows detailed logs of API calls, visual feedback cycles,
+            and bounding box analysis
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="apiKeyInput">OpenAI API Key</label>
+          <input
+            type="password"
+            id="apiKeyInput"
+            class="form-input"
+            placeholder="sk-..."
+          />
+          <p class="help-text">
+            Use your existing OpenAI API key from
+            <a href="https://platform.openai.com/api-keys" target="_blank"
+              >platform.openai.com</a
+            >
+          </p>
+        </div>
+
+        <div class="grid grid-lg-3">
+          <!-- Upload Section -->
+          <div>
+            <div class="upload-area">
+              <input
+                type="file"
+                id="imageInput"
+                accept="image/*"
+                style="display: none"
+              />
+              <div id="uploadArea">
+                <svg
+                  class="upload-icon"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  ></path>
+                </svg>
+                <p class="upload-text">
+                  Upload screenshot for button detection
+                </p>
+                <button class="btn btn-primary">Choose Image</button>
+              </div>
+            </div>
+
+            <div id="imagePreview" class="hidden">
+              <h3 class="section-title">Image Preview</h3>
+              <div class="image-preview-container">
+                <img id="previewImg" class="preview-image" />
+                <div id="buttonOverlays" class="button-overlays"></div>
+              </div>
+
+              <div class="space-y-2">
+                <button id="analyzeBtn" class="btn btn-success btn-full">
+                  <svg
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    ></path>
+                  </svg>
+                  Standard Analysis
+                </button>
+
+                <button
+                  id="progressiveBtn"
+                  class="btn btn-full"
+                  style="background-color: #10b981; color: white"
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    ></path>
+                  </svg>
+                  Visual Feedback Analysis
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Results Section -->
+          <div>
+            <div id="loading" class="loading-container hidden">
+              <div class="loading-spinner"></div>
+              <p class="loading-text">Analyzing with GPT-4 Vision...</p>
+            </div>
+
+            <div id="results" class="hidden">
+              <h3 class="section-title">Detection Results</h3>
+              <div id="resultsContent"></div>
+
+              <div class="export-section">
+                <h4 class="export-title">Export Coordinates</h4>
+                <button id="exportJson" class="btn btn-export">
+                  <svg
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    ></path>
+                  </svg>
+                  Export JSON
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Debug Section -->
+          <div>
+            <div id="debugPanel" class="debug-panel hidden">
+              <div class="debug-header">
+                <span>🔍 Debug Information</span>
+                <span>Real-time Logging</span>
+              </div>
+
+              <div class="debug-tabs">
+                <button class="debug-tab active" onclick="showDebugTab('logs')">
+                  📝 Process Logs
+                </button>
+                <button class="debug-tab" onclick="showDebugTab('cycles')">
+                  🔄 Feedback Cycles
+                </button>
+              </div>
+
+              <div id="debugLogs" class="debug-content">
+                <div id="debugContent">
+                  <p>
+                    Enable debug mode and run an analysis to see detailed logs
+                    here.
+                  </p>
+                </div>
+              </div>
+
+              <div id="debugCycles" class="debug-content hidden">
+                <div id="sliceViewer">
+                  <p>
+                    No feedback cycles created yet. Run Visual Feedback Analysis
+                    to see cross-grid overlays.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load all component scripts in dependency order -->
+    <script src="Debug-Logger.js"></script>
+    <script src="Image-Processor.js"></script>
+    <script src="GPT4-Vision-Detector.js"></script>
+    <script src="Feedback-Analyzer.js"></script>
+    <script src="Progressive-Slicer.js"></script>
+    <script src="UI-Controller.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
