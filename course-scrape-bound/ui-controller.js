@@ -1,4 +1,4 @@
-// Simplified UIController.js - Single-Button Visual Feedback Only
+// UIController.js - Simplified UI for simple alignment process
 class UIController {
   constructor() {
     this.elements = {};
@@ -6,7 +6,7 @@ class UIController {
     this.analysisResults = null;
     this.imageDimensions = { width: 0, height: 0 };
     this.currentDebugTab = "logs";
-    this.config = null; // Store loaded config
+    this.config = null;
   }
 
   // Initialize DOM elements and event listeners
@@ -58,12 +58,10 @@ class UIController {
       // Add event listeners
       this.setupEventListeners();
 
-      console.log(
-        "✅ Simplified UIController initialized - Single-Button Mode Only"
-      );
+      console.log("✅ Simplified UIController initialized");
       return true;
     } catch (error) {
-      console.error("Failed to initialize Simplified UIController:", error);
+      console.error("Failed to initialize UIController:", error);
       alert("Failed to initialize application: " + error.message);
       return false;
     }
@@ -79,43 +77,27 @@ class UIController {
         const config = await response.json();
         console.log("✅ Config file loaded successfully");
 
-        // Auto-fill API key if available and autoLoadKey is enabled
         if (config.apiKey && config.settings?.autoLoadKey !== false) {
           this.elements.apiKeyInput.value = config.apiKey;
           console.log("🔑 API key auto-loaded from config");
-
-          // Show a subtle success indicator
           this.showConfigLoadedIndicator();
         }
 
-        // Apply other settings if available
         if (config.settings?.debugMode === true && this.elements.debugToggle) {
           this.elements.debugToggle.checked = true;
           this.toggleDebugMode();
           console.log("🔍 Debug mode auto-enabled from config");
         }
 
-        // Store config for other components to use
         this.config = config;
       } else if (response.status === 404) {
         console.log("ℹ️ No local.config.json file found - this is optional");
-        this.showCreateConfigHelp();
-      } else {
-        console.warn(
-          "⚠️ Config file exists but couldn't be loaded:",
-          response.status
-        );
       }
     } catch (error) {
       console.log(
         "ℹ️ Config file not available - this is optional:",
         error.message
       );
-      // Only show help on first visit (not on every refresh)
-      if (!localStorage.getItem("config-help-shown")) {
-        this.showCreateConfigHelp();
-        localStorage.setItem("config-help-shown", "true");
-      }
     }
   }
 
@@ -124,56 +106,17 @@ class UIController {
     const indicator = document.createElement("div");
     indicator.innerHTML = "🔑 API key loaded from local.config.json";
     indicator.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: #dcfce7;
-      color: #166534;
-      padding: 8px 16px;
-      border-radius: 6px;
-      border: 1px solid #bbf7d0;
-      font-size: 14px;
-      z-index: 1000;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      position: fixed; top: 20px; right: 20px; background: #dcfce7; color: #166534;
+      padding: 8px 16px; border-radius: 6px; border: 1px solid #bbf7d0; font-size: 14px;
+      z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     `;
 
     document.body.appendChild(indicator);
-
-    // Remove after 3 seconds
     setTimeout(() => {
       if (document.body.contains(indicator)) {
         document.body.removeChild(indicator);
       }
     }, 3000);
-  }
-
-  // Show help for creating config file
-  showCreateConfigHelp() {
-    const helpDiv = document.createElement("div");
-    helpDiv.innerHTML = `
-      <div style="background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px; padding: 12px; margin: 16px 0;">
-        <h4 style="margin: 0 0 8px 0; color: #92400e;">💡 Tip: Auto-load your API key</h4>
-        <p style="margin: 0 0 8px 0; font-size: 14px; color: #92400e;">
-          Create a <code>local.config.json</code> file in the same folder as this HTML file:
-        </p>
-        <pre style="background: #fffbeb; padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto;">{
-  "apiKey": "sk-your-openai-api-key-here",
-  "settings": {
-    "autoLoadKey": true,
-    "debugMode": false
-  }
-}</pre>
-        <p style="margin: 8px 0 0 0; font-size: 12px; color: #b45309;">
-          ⚠️ Don't commit local.config.json to git - add it to .gitignore!
-        </p>
-        <button onclick="this.parentElement.remove()" style="float: right; margin-top: 8px; padding: 4px 8px; font-size: 12px; background: #fbbf24; border: none; border-radius: 4px; cursor: pointer;">Got it</button>
-        <div style="clear: both;"></div>
-      </div>
-    `;
-
-    // Insert after the API key input
-    const apiKeyGroup = this.elements.apiKeyInput.parentElement;
-    apiKeyGroup.parentNode.insertBefore(helpDiv, apiKeyGroup.nextSibling);
   }
 
   setupEventListeners() {
@@ -185,9 +128,9 @@ class UIController {
       this.handleImageUpload(e)
     );
 
-    // Single analysis button - always uses visual feedback
+    // Simple analysis button
     this.elements.analyzeBtn.addEventListener("click", () =>
-      this.triggerSingleButtonAnalysis()
+      this.triggerSimpleAnalysis()
     );
 
     // Export button
@@ -222,9 +165,7 @@ class UIController {
           this.hideResults();
           this.clearButtonOverlays();
         };
-        reader.onerror = () => {
-          alert("Failed to read image file");
-        };
+        reader.onerror = () => alert("Failed to read image file");
         reader.readAsDataURL(file);
       } else {
         alert("Please select a valid image file");
@@ -235,23 +176,22 @@ class UIController {
     }
   }
 
-  triggerSingleButtonAnalysis() {
-    console.log("🎯 Triggering Single-Button Visual Feedback Analysis");
+  triggerSimpleAnalysis() {
+    console.log("🎯 Triggering Simple Alignment Analysis");
 
-    // Always use visual feedback mode - this is our only mode now
     const event = new CustomEvent("analysisRequested", {
       detail: {
-        useVisualFeedback: true, // Always true - this is our only mode
+        useVisualFeedback: true, // Always use visual feedback
         apiKey: this.elements.apiKeyInput.value.trim(),
         selectedFile: this.selectedFile,
         imageDimensions: this.imageDimensions,
-        config: this.config, // Pass config to other components
+        config: this.config,
       },
     });
     document.dispatchEvent(event);
   }
 
-  // Simplified UI State Management
+  // UI State Management
   showLoading() {
     this.elements.loading.classList.remove("hidden");
     this.elements.results.classList.add("hidden");
@@ -259,13 +199,11 @@ class UIController {
     const loadingText = this.elements.loading.querySelector(".loading-text");
     if (loadingText) {
       loadingText.innerHTML = `
-        <div class="mode-confirmation">
-          <div class="mode-confirmation-text">
-            🎯 Starting Single-Button Visual Feedback Analysis...<br>
-            Each button will be analyzed individually with systematic overlap detection and smart nudging
-          </div>
+        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 0.5rem; padding: 1rem; margin: 1rem 0; color: #166534;">
+          🎯 Starting Simple Alignment Analysis...<br>
+          Each button will be checked for alignment and nudged if needed (max 3 attempts each)
         </div>
-        Analyzing buttons individually... This may take several API calls.
+        Analyzing buttons with simple alignment process...
       `;
     }
   }
@@ -290,7 +228,7 @@ class UIController {
     this.elements.buttonOverlays.innerHTML = "";
   }
 
-  // Simplified Results Display - Single-Button Focus
+  // Display Results
   displayResults(analysisResults) {
     try {
       this.analysisResults = analysisResults;
@@ -307,30 +245,23 @@ class UIController {
 
       this.clearButtonOverlays();
 
-      // Create simplified results HTML focused on single-button analysis
-      const modeConfirmationHtml =
-        this.generateSingleButtonConfirmationHTML(analysisResults);
-      const buttonsHtml = this.generateSingleButtonResultsHTML(
+      // Create simple results HTML
+      const summaryHtml = this.generateSimpleSummaryHTML(analysisResults);
+      const buttonsHtml = this.generateSimpleButtonsHTML(
         analysisResults.detected_buttons
-      );
-      const summaryHtml = this.generateSimplifiedSummaryHTML(analysisResults);
-      const feedbackCyclesHtml = this.generateSingleButtonFeedbackHTML(
-        analysisResults.feedback_cycles
       );
 
       this.elements.resultsContent.innerHTML =
-        modeConfirmationHtml +
         summaryHtml +
-        feedbackCyclesHtml +
         '<div class="results-container">' +
         buttonsHtml +
         "</div>";
 
-      // Add visual overlays with single-button indicators
-      this.addSingleButtonOverlays(analysisResults.detected_buttons);
+      // Add simple overlays
+      this.addSimpleOverlays(analysisResults.detected_buttons);
       this.showResults();
     } catch (error) {
-      console.error("Error displaying single-button results:", error);
+      console.error("Error displaying results:", error);
       this.elements.resultsContent.innerHTML =
         '<div class="analysis-error"><div class="analysis-error-text">Error displaying results: ' +
         error.message +
@@ -339,82 +270,45 @@ class UIController {
     }
   }
 
-  // Generate single-button mode confirmation
-  generateSingleButtonConfirmationHTML(analysisResults) {
-    if (
-      analysisResults.analysis_method ===
-      "single_button_visual_feedback_CONFIRMED"
-    ) {
-      return `
-        <div class="mode-confirmation">
-          <div class="mode-confirmation-text">
-            ✅ CONFIRMED: Single-Button Individual Analysis Completed<br>
-            Initial: ALL buttons detected → Refinement: EACH button analyzed individually
-            ${
-              analysisResults.processing_confirmation?.nudging_applied
-                ? "| Smart Nudging Applied ✨"
-                : ""
-            }
-          </div>
-        </div>
-      `;
-    }
-    return `
-      <div class="mode-confirmation" style="background-color: #fef3c7; border-color: #f59e0b;">
-        <div class="mode-confirmation-text" style="color: #92400e;">
-          ⚠️ Analysis mode not confirmed as single-button processing
-        </div>
-      </div>
-    `;
-  }
-
-  // Generate simplified summary focused on single-button results
-  generateSimplifiedSummaryHTML(analysisResults) {
-    const apiCallInfo = analysisResults.total_api_calls
-      ? `<p class="text-xs text-blue-600 mt-1">🔄 API calls used: ${analysisResults.total_api_calls}</p>`
-      : "";
-
-    const processingInfo = analysisResults.processing_confirmation
-      ? `<div class="text-xs text-gray-600 mt-2">
-          <div>🎯 Mode: ${
-            analysisResults.processing_confirmation.refinement_cycles ||
-            "Single-Button Processing"
-          }</div>
-          <div>📝 Nudging: ${
-            analysisResults.processing_confirmation.nudging_applied
-              ? "✅ Applied"
-              : "❌ Not needed"
-          }</div>
-        </div>`
-      : "";
+  // Generate simple summary
+  generateSimpleSummaryHTML(analysisResults) {
+    const summary = analysisResults.analysis_summary;
+    const processing = analysisResults.processing_confirmation;
 
     return `
       <div class="summary-box">
         <div class="flex justify-between items-start">
-          <h4 class="summary-title">🎯 Found ${analysisResults.detected_buttons.length} buttons with single-button analysis</h4>
-          <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Single-Button Confirmed</span>
+          <h4 class="summary-title">🎯 Found ${
+            summary.total_elements_found
+          } buttons with simple alignment</h4>
+          <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Simple Process</span>
         </div>
-        <p class="summary-text">${analysisResults.analysis_summary.image_description}</p>
-        ${apiCallInfo}
-        ${processingInfo}
+        <p class="summary-text">${summary.image_description}</p>
+        <div class="text-xs text-gray-600 mt-2">
+          <div>✅ Successfully aligned: ${summary.aligned_buttons}/${
+      summary.total_elements_found
+    } (${summary.success_rate}%)</div>
+          <div>🔄 Total alignment attempts: ${
+            summary.total_alignment_attempts
+          }</div>
+          <div>📞 API calls used: ${analysisResults.total_api_calls}</div>
+          <div>📝 Max attempts per button: ${
+            processing?.max_attempts_per_button || 3
+          }</div>
+        </div>
       </div>
     `;
   }
 
-  // Generate single-button focused results
-  generateSingleButtonResultsHTML(buttons) {
+  // Generate simple button results
+  generateSimpleButtonsHTML(buttons) {
     return buttons
-      .map((button, index) => {
-        const processingIndicator =
-          button.processing_mode === "SINGLE_BUTTON_CONFIRMED"
-            ? `<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded ml-2">🎯 Individual</span>`
-            : "";
-
-        const correctionInfo = button.correction_applied
-          ? `<div class="text-green-600">✅ Smart nudging applied: ${
-              button.correction_applied.nudge_type || "position adjustment"
-            }</div>`
-          : `<div class="text-blue-600">ℹ️ No correction needed - button well positioned</div>`;
+      .map((button) => {
+        const statusIcon = button.final_status === "aligned" ? "✅" : "⚠️";
+        const statusColor =
+          button.final_status === "aligned"
+            ? "text-green-600"
+            : "text-yellow-600";
 
         const confidenceClass =
           button.confidence >= 80
@@ -426,18 +320,30 @@ class UIController {
         return `
           <div class="result-item">
             <div class="result-header">
-              <h4 class="result-name">🎯 ${button.reference_name}</h4>
+              <h4 class="result-name">${statusIcon} ${
+          button.reference_name
+        }</h4>
               <div>
-                <span class="confidence-badge ${confidenceClass}">${button.confidence}%</span>
-                ${processingIndicator}
+                <span class="confidence-badge ${confidenceClass}">${
+          button.confidence
+        }%</span>
               </div>
             </div>
             <p class="result-description">${button.description}</p>
             <div class="result-details">
               <div>Type: ${button.element_type}</div>
-              <div>Center: (${button.center_coordinates.x}, ${button.center_coordinates.y})</div>
-              <div>Size: ${button.estimated_size.width}×${button.estimated_size.height}px</div>
-              ${correctionInfo}
+              <div>Final Position: (${button.center_coordinates.x}, ${
+          button.center_coordinates.y
+        })</div>
+              <div>Size: ${button.estimated_size.width}×${
+          button.estimated_size.height
+        }px</div>
+              <div class="${statusColor}">Status: ${button.final_status.replace(
+          /_/g,
+          " "
+        )}</div>
+              <div>Alignment attempts: ${button.alignment_attempts}</div>
+              <div>Nudges applied: ${button.nudge_count}</div>
             </div>
           </div>
         `;
@@ -445,75 +351,8 @@ class UIController {
       .join("");
   }
 
-  // Generate single-button feedback cycles display
-  generateSingleButtonFeedbackHTML(feedbackCycles) {
-    if (!feedbackCycles || feedbackCycles.length === 0) {
-      return "";
-    }
-
-    return `
-      <div class="feedback-cycles-section">
-        <h4 class="text-sm font-semibold mb-2">🔄 Single-Button Analysis Cycles</h4>
-        <div class="feedback-cycles-nav">
-          ${feedbackCycles
-            .map((cycle, index) => {
-              const statusIndicator = cycle.parsing_successful ? "✅" : "⚠️";
-              const statusClass = cycle.parsing_successful
-                ? "bg-green-100 text-green-800"
-                : "bg-yellow-100 text-yellow-800";
-
-              const individualIcon =
-                cycle.individual_results?.length > 0 ? " 🎯" : "";
-              const nudgingIcon = cycle.nudging_applied ? " 📝" : "";
-
-              return `<button class="cycle-btn ${
-                index === 0 ? "active" : ""
-              } ${statusClass}" onclick="showFeedbackCycle(${index})">
-                ${statusIndicator} Cycle ${
-                cycle.cycle
-              }${individualIcon}${nudgingIcon}
-              </button>`;
-            })
-            .join("")}
-        </div>
-        <div id="cycleViewer" class="cycle-viewer">
-          ${this.generateInitialCycleView(feedbackCycles[0])}
-        </div>
-      </div>
-    `;
-  }
-
-  generateInitialCycleView(cycle) {
-    if (!cycle) return "<p>No cycles available</p>";
-
-    const individual_count = cycle.individual_results
-      ? cycle.individual_results.length
-      : 0;
-    const successful_individual = cycle.individual_results
-      ? cycle.individual_results.filter((r) => r.result.parsing_successful)
-          .length
-      : 0;
-
-    return `
-      <img src="${cycle.overlayImageUrl}" alt="Cycle 1" class="cycle-image" />
-      <p class="cycle-info">
-        🎯 Cycle 1: ${
-          cycle.type === "initial_detection"
-            ? "Initial Detection (ALL buttons)"
-            : "Single-Button Refinement"
-        } 
-        - ${cycle.buttons.length} buttons
-        ${
-          individual_count > 0
-            ? ` | Individual: ${successful_individual}/${individual_count} successful`
-            : ""
-        }
-      </p>
-    `;
-  }
-
-  // Single-button focused overlays
-  addSingleButtonOverlays(buttons) {
+  // Add simple overlays
+  addSimpleOverlays(buttons) {
     try {
       const scaleX =
         this.elements.previewImg.offsetWidth / this.imageDimensions.width;
@@ -532,25 +371,23 @@ class UIController {
         overlay.style.top = y + "px";
         overlay.style.transform = "translate(-50%, -50%)";
 
-        // Single-button focused color coding
-        let dotColor = "bg-green-500"; // Default for single-button processed
-        if (button.correction_applied) {
-          dotColor = "bg-blue-500"; // Nudging applied
+        // Color based on final status
+        let dotColor = "bg-green-500"; // aligned
+        if (button.final_status !== "aligned") {
+          dotColor = "bg-yellow-500"; // not aligned
         }
 
-        // Single-button indicators
-        const processingIcon = "🎯"; // Always show single-button icon
-        const correctionIcon = button.correction_applied ? "📝" : "";
+        const statusIcon = button.final_status === "aligned" ? "✅" : "⚠️";
 
         overlay.innerHTML = `
           <div class="button-dot ${dotColor}"></div>
-          <div class="button-label">${processingIcon} ${button.reference_name}${correctionIcon}</div>
+          <div class="button-label">${statusIcon} ${button.reference_name}</div>
         `;
 
         this.elements.buttonOverlays.appendChild(overlay);
       });
     } catch (error) {
-      console.error("Error adding single-button overlays:", error);
+      console.error("Error adding overlays:", error);
     }
   }
 
@@ -567,17 +404,17 @@ class UIController {
 
       const a = document.createElement("a");
       a.href = url;
-      a.download = `single_button_analysis_${new Date().getTime()}.json`;
+      a.download = `simple_alignment_analysis_${new Date().getTime()}.json`;
       a.click();
 
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error("Error exporting single-button JSON:", error);
+      console.error("Error exporting JSON:", error);
       alert("Error exporting JSON: " + error.message);
     }
   }
 
-  // Simplified debug functionality
+  // Debug functionality
   toggleDebugMode() {
     const debugMode = this.elements.debugToggle
       ? this.elements.debugToggle.checked
@@ -587,172 +424,29 @@ class UIController {
       this.elements.debugPanel.classList.toggle("hidden", !debugMode);
 
       if (debugMode) {
-        console.log(
-          "🔍 Debug mode enabled - Single-Button Analysis tracking active"
-        );
-        this.showSessionInfo();
+        console.log("🔍 Debug mode enabled - Simple alignment tracking active");
       } else {
         console.log("🔍 Debug mode disabled");
       }
     }
 
-    // Dispatch event for other components to react to debug mode change
+    // Dispatch event for other components
     const event = new CustomEvent("debugModeChanged", {
       detail: { enabled: debugMode },
     });
     document.dispatchEvent(event);
   }
 
-  showSessionInfo() {
-    if (typeof debugLogger !== "undefined" && debugLogger.isEnabled()) {
-      const sessionInfo = debugLogger.getAnalysisSession();
-      const summary = debugLogger.getAnalysisSummary();
-
-      if (sessionInfo || summary) {
-        this.updateSessionInfoDisplay(sessionInfo, summary);
-      }
-    }
-  }
-
-  updateSessionInfoDisplay(sessionInfo, summary) {
-    const debugContent = this.elements.debugContent;
-    if (!debugContent) return;
-
-    const sessionInfoHtml = `
-      <div class="debug-session-info">
-        <h4 style="color: #1e40af; font-weight: 600; margin-bottom: 0.75rem;">🎯 Single-Button Analysis Session</h4>
-        <div class="session-meta">
-          <div class="session-stat">
-            <span class="session-stat-value">${
-              sessionInfo?.llmCalls || 0
-            }</span>
-            <span class="session-stat-label">LLM Conversations</span>
-          </div>
-          <div class="session-stat">
-            <span class="session-stat-value">${
-              sessionInfo?.nudgingEvents || 0
-            }</span>
-            <span class="session-stat-label">Nudging Events</span>
-          </div>
-          <div class="session-stat">
-            <span class="session-stat-value">Single-Button</span>
-            <span class="session-stat-label">Analysis Mode</span>
-          </div>
-        </div>
-        ${
-          summary?.singleButtonAnalysis
-            ? `
-          <div style="margin-top: 0.75rem; font-size: 0.875rem; color: #374151;">
-            <strong>🎯 Individual Processing:</strong> 
-            ${summary.singleButtonAnalysis.successful}/${
-                summary.singleButtonAnalysis.successful +
-                summary.singleButtonAnalysis.failed
-              } successful
-            ${
-              summary.singleButtonAnalysis.retries > 0
-                ? ` (${summary.singleButtonAnalysis.retries} retries)`
-                : ""
-            }
-          </div>
-        `
-            : ""
-        }
-      </div>
-    `;
-
-    // Prepend session info to debug content
-    const existingContent = debugContent.innerHTML;
-    debugContent.innerHTML = sessionInfoHtml + existingContent;
-  }
-
-  // Simplified debug panel update
   updateDebugPanel(debugLogger) {
     if (!this.elements.debugContent) return;
 
     const logHtml = debugLogger.generateLogHTML();
-
-    // Include session info for single-button analysis
-    const sessionInfo = debugLogger.getAnalysisSession();
-    const summary = debugLogger.getAnalysisSummary();
-
-    let sessionInfoHtml = "";
-    if (sessionInfo || summary) {
-      sessionInfoHtml = this.generateSingleButtonSessionHTML(
-        sessionInfo,
-        summary
-      );
-    }
-
-    this.elements.debugContent.innerHTML = sessionInfoHtml + logHtml;
+    this.elements.debugContent.innerHTML = logHtml;
   }
 
-  generateSingleButtonSessionHTML(sessionInfo, summary) {
-    if (!sessionInfo && !summary) return "";
-
-    return `
-      <div class="debug-session-info">
-        <h4 style="color: #1e40af; font-weight: 600; margin-bottom: 0.75rem;">🎯 Single-Button Analysis Summary</h4>
-        <div class="session-meta">
-          <div class="session-stat">
-            <span class="session-stat-value">${
-              summary?.llmConversations || 0
-            }</span>
-            <span class="session-stat-label">LLM Conversations</span>
-          </div>
-          <div class="session-stat">
-            <span class="session-stat-value">${
-              summary?.nudgingEvents || 0
-            }</span>
-            <span class="session-stat-label">Smart Nudges</span>
-          </div>
-          <div class="session-stat">
-            <span class="session-stat-value">${
-              summary?.singleButtonAnalysis?.successful || 0
-            }</span>
-            <span class="session-stat-label">Successful Analyses</span>
-          </div>
-        </div>
-        <div style="margin-top: 0.75rem; font-size: 0.875rem; color: #374151;">
-          <div><strong>🎯 Mode:</strong> Single-Button Individual Processing</div>
-          ${
-            sessionInfo?.startTime
-              ? `<div><strong>⏱️ Started:</strong> ${new Date(
-                  sessionInfo.startTime
-                ).toLocaleTimeString()}</div>`
-              : ""
-          }
-          ${
-            sessionInfo?.duration
-              ? `<div><strong>⏱️ Duration:</strong> ${Math.round(
-                  sessionInfo.duration / 1000
-                )}s</div>`
-              : ""
-          }
-        </div>
-      </div>
-    `;
-  }
-
-  // Getters for component access
-  getSelectedFile() {
-    return this.selectedFile;
-  }
-
-  getImageDimensions() {
-    return this.imageDimensions;
-  }
-
-  getApiKey() {
-    return this.elements.apiKeyInput.value.trim();
-  }
-
-  getConfig() {
-    return this.config;
-  }
-
-  // Simplified validation methods
+  // Validation and error handling
   validateInputs() {
-    const apiKey = this.getApiKey();
+    const apiKey = this.elements.apiKeyInput.value.trim();
     if (!apiKey) {
       this.showError("Please enter your OpenAI API key");
       return false;
@@ -766,7 +460,6 @@ class UIController {
     return true;
   }
 
-  // Simplified error handling
   showError(message) {
     const errorHtml = `
       <div class="analysis-error">
@@ -783,7 +476,7 @@ class UIController {
   }
 
   showSuccess(message) {
-    console.log("✅ Single-Button Success:", message);
+    console.log("✅ Success:", message);
 
     // Show temporary success notification
     const successHtml = `
@@ -806,9 +499,26 @@ class UIController {
       }
     }, 3000);
   }
+
+  // Getters
+  getSelectedFile() {
+    return this.selectedFile;
+  }
+
+  getImageDimensions() {
+    return this.imageDimensions;
+  }
+
+  getApiKey() {
+    return this.elements.apiKeyInput.value.trim();
+  }
+
+  getConfig() {
+    return this.config;
+  }
 }
 
-// Simplified global function for feedback cycle viewer
+// Global function for feedback cycle viewer (if needed)
 function showFeedbackCycle(cycleIndex) {
   const event = new CustomEvent("showFeedbackCycle", {
     detail: { cycleIndex },
