@@ -1,4 +1,4 @@
-// FeedbackAnalyzer.js - Simplified feedback analysis with max 3 attempts per button
+// FeedbackAnalyzer.js - Fixed feedback analysis with proper status tracking
 class FeedbackAnalyzer {
   constructor(detector, imageProcessor) {
     this.detector = detector;
@@ -12,13 +12,15 @@ class FeedbackAnalyzer {
     this.maxAlignmentAttempts = 3;
 
     console.log(
-      "🎯 FeedbackAnalyzer initialized with simple alignment process"
+      "🎯 FeedbackAnalyzer initialized with enhanced visual feedback"
     );
   }
 
   // Main analysis - simplified process with max 3 attempts per button
   async analyzeWithVisualFeedback(originalFile, imageDimensions) {
-    console.log("🎯 Starting simplified button detection and alignment");
+    console.log(
+      "🎯 Starting enhanced button detection and alignment with visual feedback"
+    );
     this.detector.apiCallCount = 1; // Count initial analysis
 
     // Initialize debug logging
@@ -47,7 +49,7 @@ class FeedbackAnalyzer {
 
       // Step 2: Process each button individually (max 3 alignment checks each)
       console.log(
-        "🔍 Processing each button individually with simple alignment..."
+        "🔍 Processing each button individually with enhanced visual feedback..."
       );
       const processedButtons = await this.processAllButtons(
         originalFile,
@@ -55,7 +57,7 @@ class FeedbackAnalyzer {
       );
 
       // Step 3: Return final results
-      return this.finalizeSimpleResults(processedButtons);
+      return this.finalizeEnhancedResults(processedButtons);
     } catch (error) {
       this.logAnalysisError(error);
       throw error;
@@ -69,14 +71,18 @@ class FeedbackAnalyzer {
     if (typeof debugLogger !== "undefined") {
       debugLogger.clear();
       debugLogger.startAnalysisSession();
-      debugLogger.currentAnalysisSession.mode = "simple_alignment";
+      debugLogger.currentAnalysisSession.mode = "enhanced_simple_alignment";
 
-      debugLogger.addLog("info", "🎯 Simple Alignment Analysis Started", {
-        maxAttemptsPerButton: this.maxAlignmentAttempts,
-        approach: "simple_alignment_process",
-        mode: this.currentMode,
-        timestamp: new Date().toISOString(),
-      });
+      debugLogger.addLog(
+        "info",
+        "🎯 Enhanced Simple Alignment Analysis Started",
+        {
+          maxAttemptsPerButton: this.maxAlignmentAttempts,
+          approach: "enhanced_simple_alignment_with_visual_feedback",
+          mode: this.currentMode,
+          timestamp: new Date().toISOString(),
+        }
+      );
     }
   }
 
@@ -149,7 +155,7 @@ class FeedbackAnalyzer {
         }`
       );
 
-      const processedButton = await this.processButton(
+      const processedButton = await this.processButtonWithEnhancedFeedback(
         originalFile,
         buttons[i],
         i + 1
@@ -160,15 +166,19 @@ class FeedbackAnalyzer {
     return processedButtons;
   }
 
-  // Process single button - max 3 alignment attempts, then done
-  async processButton(originalFile, button, buttonNumber) {
+  // Process single button with enhanced visual feedback - max 3 alignment attempts, then done
+  async processButtonWithEnhancedFeedback(originalFile, button, buttonNumber) {
     let currentButton = { ...button };
     let alignmentAttempt = 1;
     let isAligned = false;
 
-    // Track alignment history
+    // Track alignment history with overlay URLs
     currentButton.alignmentHistory = [];
     currentButton.nudgeHistory = [];
+
+    console.log(
+      `🎯 Starting alignment process for button ${buttonNumber}: ${button.reference_name}`
+    );
 
     while (alignmentAttempt <= this.maxAlignmentAttempts && !isAligned) {
       console.log(
@@ -183,6 +193,12 @@ class FeedbackAnalyzer {
         alignmentAttempt
       );
 
+      console.log(
+        `📸 Created overlay for attempt ${alignmentAttempt}: ${
+          overlayUrl ? "Success" : "Failed"
+        }`
+      );
+
       // Check alignment (single attempt, no retries)
       this.detector.apiCallCount++;
       const alignmentResult =
@@ -193,23 +209,32 @@ class FeedbackAnalyzer {
           alignmentAttempt
         );
 
-      // Store alignment result
+      console.log(
+        `📋 Alignment result for attempt ${alignmentAttempt}: aligned=${alignmentResult.isAligned}, direction=${alignmentResult.direction}`
+      );
+
+      // Store alignment result with overlay URL
       currentButton.alignmentHistory.push({
         attempt: alignmentAttempt,
         result: alignmentResult,
         overlayUrl: overlayUrl,
+        bounding_box_at_attempt: { ...currentButton.bounding_box },
       });
 
+      // Check if aligned
       if (alignmentResult.isAligned) {
-        console.log(`✅ Button ${buttonNumber} is aligned!`);
+        console.log(
+          `✅ Button ${buttonNumber} is aligned after ${alignmentAttempt} attempts!`
+        );
         isAligned = true;
         currentButton.finalStatus = "aligned";
+        break;
       } else if (
         alignmentResult.needsMovement &&
         alignmentAttempt < this.maxAlignmentAttempts
       ) {
         console.log(
-          `📝 Button ${buttonNumber} needs to move ${alignmentResult.direction}`
+          `📝 Button ${buttonNumber} needs to move ${alignmentResult.direction} (attempt ${alignmentAttempt})`
         );
 
         // Apply corrections using nudging engine
@@ -242,35 +267,55 @@ class FeedbackAnalyzer {
               to: currentButton.bounding_box,
               correction: correction,
             });
+
+            console.log(
+              `📝 Applied nudge: moved from (${originalBbox.x}, ${originalBbox.y}) to (${currentButton.bounding_box.x}, ${currentButton.bounding_box.y})`
+            );
           }
         }
       } else {
         console.log(
-          `⚠️ Button ${buttonNumber} alignment incomplete - stopping at attempt ${alignmentAttempt}`
+          `⚠️ Button ${buttonNumber} alignment incomplete after attempt ${alignmentAttempt}`
         );
-        currentButton.finalStatus = "alignment_incomplete";
         break;
       }
 
       alignmentAttempt++;
     }
 
-    if (!isAligned && alignmentAttempt > this.maxAlignmentAttempts) {
-      currentButton.finalStatus = "max_attempts_reached";
+    // Set final status based on results
+    if (!isAligned) {
+      if (alignmentAttempt > this.maxAlignmentAttempts) {
+        currentButton.finalStatus = "max_attempts_reached";
+        console.log(
+          `⚠️ Button ${buttonNumber} reached max attempts (${this.maxAlignmentAttempts})`
+        );
+      } else {
+        currentButton.finalStatus = "alignment_incomplete";
+        console.log(`⚠️ Button ${buttonNumber} alignment incomplete`);
+      }
     }
+
+    console.log(
+      `📊 Button ${buttonNumber} final status: ${currentButton.finalStatus}`
+    );
 
     return currentButton;
   }
 
-  // Finalize simple results
-  finalizeSimpleResults(processedButtons) {
+  // Finalize enhanced results with better status tracking
+  finalizeEnhancedResults(processedButtons) {
     if (typeof debugLogger !== "undefined") {
       debugLogger.endAnalysisSession();
-      debugLogger.addLog("success", "✅ Simple Alignment Analysis Completed", {
-        totalButtons: processedButtons.length,
-        totalApiCalls: this.detector.apiCallCount,
-        approach: "simple_alignment_process",
-      });
+      debugLogger.addLog(
+        "success",
+        "✅ Enhanced Simple Alignment Analysis Completed",
+        {
+          totalButtons: processedButtons.length,
+          totalApiCalls: this.detector.apiCallCount,
+          approach: "enhanced_simple_alignment_with_visual_feedback",
+        }
+      );
     }
 
     // Convert back to center coordinates format
@@ -290,11 +335,12 @@ class FeedbackAnalyzer {
       alignment_attempts: button.alignmentHistory?.length || 0,
       nudge_count: button.nudgeHistory?.length || 0,
       final_status: button.finalStatus || "unknown",
-      alignment_history: button.alignmentHistory,
-      nudge_history: button.nudgeHistory,
-      processing_mode: "SIMPLE_ALIGNMENT",
+      alignment_history: button.alignmentHistory || [],
+      nudge_history: button.nudgeHistory || [],
+      processing_mode: "ENHANCED_SIMPLE_ALIGNMENT",
     }));
 
+    // Calculate statistics
     const alignedButtons = finalButtons.filter(
       (b) => b.final_status === "aligned"
     ).length;
@@ -302,24 +348,51 @@ class FeedbackAnalyzer {
       (sum, b) => sum + b.alignment_attempts,
       0
     );
+    const totalNudges = finalButtons.reduce((sum, b) => sum + b.nudge_count, 0);
+
+    // Count buttons by final status
+    const statusCounts = finalButtons.reduce((counts, button) => {
+      counts[button.final_status] = (counts[button.final_status] || 0) + 1;
+      return counts;
+    }, {});
+
+    console.log(`📊 Final Statistics:`);
+    console.log(`   - Total buttons: ${finalButtons.length}`);
+    console.log(`   - Successfully aligned: ${alignedButtons}`);
+    console.log(`   - Total alignment attempts: ${totalAttempts}`);
+    console.log(`   - Total nudges applied: ${totalNudges}`);
+    console.log(`   - Status breakdown:`, statusCounts);
 
     return {
       detected_buttons: finalButtons,
       analysis_summary: {
         total_elements_found: finalButtons.length,
-        image_description: `Simple alignment analysis with max ${this.maxAlignmentAttempts} attempts per button`,
+        image_description: `Enhanced simple alignment analysis with visual feedback (max ${this.maxAlignmentAttempts} attempts per button)`,
         aligned_buttons: alignedButtons,
         total_alignment_attempts: totalAttempts,
+        total_nudges_applied: totalNudges,
         success_rate: Math.round((alignedButtons / finalButtons.length) * 100),
+        status_breakdown: statusCounts,
       },
-      analysis_method: "simple_alignment_process",
+      analysis_method: "enhanced_simple_alignment_process",
       total_api_calls: this.detector.apiCallCount,
       processing_confirmation: {
-        mode: "SIMPLE_ALIGNMENT_PROCESS",
+        mode: "ENHANCED_SIMPLE_ALIGNMENT_PROCESS",
         initial_detection: "ALL_BUTTONS_AT_ONCE",
-        alignment_process: "ONE_BUTTON_AT_A_TIME_MAX_3_ATTEMPTS",
+        alignment_process:
+          "ONE_BUTTON_AT_A_TIME_MAX_3_ATTEMPTS_WITH_VISUAL_FEEDBACK",
         max_attempts_per_button: this.maxAlignmentAttempts,
         nudging_applied: finalButtons.some((b) => b.nudge_count > 0),
+        visual_feedback_enabled: true,
+        overlay_generation: "EACH_ATTEMPT_RECORDED",
+      },
+      visual_feedback_summary: {
+        total_overlays_generated: totalAttempts,
+        buttons_with_visual_history: finalButtons.filter(
+          (b) => b.alignment_history.length > 0
+        ).length,
+        average_attempts_per_button:
+          Math.round((totalAttempts / finalButtons.length) * 100) / 100,
       },
       debug_log:
         typeof debugLogger !== "undefined" ? debugLogger.getLogs() : undefined,
@@ -335,12 +408,16 @@ class FeedbackAnalyzer {
   // Log analysis error
   logAnalysisError(error) {
     if (typeof debugLogger !== "undefined") {
-      debugLogger.addLog("error", "❌ Simple Alignment Analysis Failed", {
-        error: error.message,
-        apiCallsUsed: this.detector.apiCallCount,
-      });
+      debugLogger.addLog(
+        "error",
+        "❌ Enhanced Simple Alignment Analysis Failed",
+        {
+          error: error.message,
+          apiCallsUsed: this.detector.apiCallCount,
+        }
+      );
     }
-    console.error("Error in simple alignment analysis:", error);
+    console.error("Error in enhanced simple alignment analysis:", error);
   }
 
   // Public methods for verification
@@ -351,6 +428,7 @@ class FeedbackAnalyzer {
       nudge_distance: this.nudgingEngine.nudgeDistance,
       overlay_cache: this.overlayGenerator.getCacheStats(),
       nudging_stats: this.nudgingEngine.getNudgingStats(),
+      visual_feedback_enabled: true,
     };
   }
 

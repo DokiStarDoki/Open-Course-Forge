@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manual Bounding Box Tool</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background-color: #f5f5f5;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+
+      .header h1 {
+        color: #333;
+        margin-bottom: 10px;
+      }
+
+      .header p {
+        color: #666;
+        font-size: 14px;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .control-panel {
+        background: #f9f9f9;
+        padding: 20px;
+        border-radius: 8px;
+        border: 2px solid #e0e0e0;
+      }
+
+      .control-group {
+        margin-bottom: 15px;
+      }
+
+      .control-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 5px;
+        color: #333;
+      }
+
+      .control-group input {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      .control-group input:focus {
+        outline: none;
+        border-color: #007bff;
+      }
+
+      .file-input {
+        border: 2px dashed #007bff;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .file-input:hover {
+        background-color: #f0f8ff;
+      }
+
+      .file-input input {
+        display: none;
+      }
+
+      .preview-container {
+        background: #fafafa;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 10px;
+        min-height: 400px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .canvas-container {
+        position: relative;
+        display: inline-block;
+      }
+
+      #imageCanvas {
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        max-width: 100%;
+        height: auto;
+      }
+
+      .button-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+      }
+
+      .btn-primary {
+        background-color: #007bff;
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background-color: #0056b3;
+      }
+
+      .btn-success {
+        background-color: #28a745;
+        color: white;
+      }
+
+      .btn-success:hover {
+        background-color: #1e7e34;
+      }
+
+      .btn-warning {
+        background-color: #ffc107;
+        color: #212529;
+      }
+
+      .btn-warning:hover {
+        background-color: #e0a800;
+      }
+
+      .btn:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+      }
+
+      .info-box {
+        background: #e3f2fd;
+        border: 1px solid #2196f3;
+        border-radius: 5px;
+        padding: 15px;
+        margin-top: 15px;
+      }
+
+      .info-box h4 {
+        color: #1976d2;
+        margin-bottom: 10px;
+      }
+
+      .info-box p {
+        color: #424242;
+        font-size: 14px;
+        margin-bottom: 5px;
+      }
+
+      .coordinates-display {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 10px;
+        font-family: monospace;
+        font-size: 12px;
+        margin-top: 10px;
+      }
+
+      @media (max-width: 768px) {
+        .controls {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🎯 Manual Bounding Box Tool</h1>
+        <p>
+          Load an image, set coordinates and label, then export for manual
+          prompt testing
+        </p>
+      </div>
+
+      <div class="controls">
+        <div class="control-panel">
+          <h3>Controls</h3>
+
+          <div class="control-group">
+            <div
+              class="file-input"
+              onclick="document.getElementById('imageInput').click()"
+            >
+              <input type="file" id="imageInput" accept="image/*" />
+              <p>📁 Click to upload image</p>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label for="labelInput">Button Label:</label>
+            <input
+              type="text"
+              id="labelInput"
+              placeholder="e.g., continue_hunting_button"
+              value="test_button"
+            />
+          </div>
+
+          <div class="control-group">
+            <label for="xInput">X Position:</label>
+            <input
+              type="number"
+              id="xInput"
+              placeholder="e.g., 490"
+              value="100"
+            />
+          </div>
+
+          <div class="control-group">
+            <label for="yInput">Y Position:</label>
+            <input
+              type="number"
+              id="yInput"
+              placeholder="e.g., 450"
+              value="100"
+            />
+          </div>
+
+          <div class="control-group">
+            <label for="inputMode">Input Mode:</label>
+            <select
+              id="inputMode"
+              onchange="toggleInputMode()"
+              style="
+                width: 100%;
+                padding: 8px 12px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+              "
+            >
+              <option value="wh">Width & Height</option>
+              <option value="xy2">X2 & Y2 (Bottom-right corner)</option>
+            </select>
+          </div>
+
+          <div class="control-group" id="whInputs">
+            <label for="widthInput">Width:</label>
+            <input
+              type="number"
+              id="widthInput"
+              placeholder="e.g., 280"
+              value="200"
+            />
+            <label for="heightInput" style="margin-top: 10px">Height:</label>
+            <input
+              type="number"
+              id="heightInput"
+              placeholder="e.g., 50"
+              value="60"
+            />
+          </div>
+
+          <div class="control-group" id="xy2Inputs" style="display: none">
+            <label for="x2Input">X2 (Right edge):</label>
+            <input
+              type="number"
+              id="x2Input"
+              placeholder="e.g., 770"
+              value="300"
+            />
+            <label for="y2Input" style="margin-top: 10px"
+              >Y2 (Bottom edge):</label
+            >
+            <input
+              type="number"
+              id="y2Input"
+              placeholder="e.g., 500"
+              value="160"
+            />
+          </div>
+
+          <div class="button-group">
+            <button class="btn btn-primary" onclick="drawBoundingBox()">
+              🎨 Draw Box
+            </button>
+            <button class="btn btn-warning" onclick="clearCanvas()">
+              🗑️ Clear
+            </button>
+            <button
+              class="btn btn-success"
+              onclick="exportImage()"
+              id="exportBtn"
+              disabled
+            >
+              💾 Export
+            </button>
+          </div>
+
+          <div class="coordinates-display" id="coordinatesDisplay">
+            No bounding box drawn yet
+          </div>
+        </div>
+
+        <div class="preview-container">
+          <div class="canvas-container">
+            <canvas id="imageCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box">
+        <h4>📋 How to Use:</h4>
+        <p><strong>1.</strong> Upload an image using the file input</p>
+        <p>
+          <strong>2.</strong> Choose input mode: Width/Height OR X2/Y2
+          coordinates
+        </p>
+        <p>
+          <strong>3.</strong> Enter the button label and bounding box
+          coordinates
+        </p>
+        <p>
+          <strong>4.</strong> Click "Draw Box" to see the red bounding box with
+          quadrants
+        </p>
+        <p>
+          <strong>5.</strong> Click "Export" to download the image with bounding
+          box
+        </p>
+        <p>
+          <strong>6.</strong> Use the exported image for manual prompt testing
+          in ChatGPT
+        </p>
+        <p>
+          <strong>💡 Tip:</strong> Input fields sync automatically - change
+          width/height and X2/Y2 updates, or vice versa!
+        </p>
+      </div>
+    </div>
+
+    <script>
+      let canvas, ctx, originalImage;
+      let currentBoundingBox = null;
+
+      // Initialize canvas
+      function initCanvas() {
+        canvas = document.getElementById("imageCanvas");
+        ctx = canvas.getContext("2d");
+      }
+
+      // Handle image upload
+      document
+        .getElementById("imageInput")
+        .addEventListener("change", function (e) {
+          const file = e.target.files[0];
+          if (file && file.type.startsWith("image/")) {
+            const reader = new FileReader();
+            reader.onload = function (event) {
+              const img = new Image();
+              img.onload = function () {
+                originalImage = img;
+
+                // Set canvas size to image size
+                canvas.width = img.width;
+                canvas.height = img.height;
+
+                // Draw the image
+                ctx.drawImage(img, 0, 0);
+
+                // Enable export button
+                document.getElementById("exportBtn").disabled = false;
+
+                console.log(`📐 Image loaded: ${img.width}x${img.height}`);
+                updateCoordinatesDisplay();
+              };
+              img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+          } else {
+            alert("Please select a valid image file");
+          }
+        });
+
+      // Toggle between input modes
+      function toggleInputMode() {
+        const mode = document.getElementById("inputMode").value;
+        const whInputs = document.getElementById("whInputs");
+        const xy2Inputs = document.getElementById("xy2Inputs");
+
+        if (mode === "wh") {
+          whInputs.style.display = "block";
+          xy2Inputs.style.display = "none";
+        } else {
+          whInputs.style.display = "none";
+          xy2Inputs.style.display = "block";
+        }
+
+        // Update coordinates display when switching modes
+        updateCoordinatesDisplay();
+      }
+
+      // Get bounding box coordinates based on current input mode
+      function getBoundingBoxCoords() {
+        const mode = document.getElementById("inputMode").value;
+        const x = parseInt(document.getElementById("xInput").value);
+        const y = parseInt(document.getElementById("yInput").value);
+
+        if (mode === "wh") {
+          const width = parseInt(document.getElementById("widthInput").value);
+          const height = parseInt(document.getElementById("heightInput").value);
+          return { x, y, width, height };
+        } else {
+          const x2 = parseInt(document.getElementById("x2Input").value);
+          const y2 = parseInt(document.getElementById("y2Input").value);
+          const width = x2 - x;
+          const height = y2 - y;
+          return { x, y, width, height, x2, y2 };
+        }
+      }
+
+      // Update the other input fields when user changes values
+      function syncInputFields() {
+        const mode = document.getElementById("inputMode").value;
+        const coords = getBoundingBoxCoords();
+
+        if (mode === "wh" && !isNaN(coords.width) && !isNaN(coords.height)) {
+          // Update X2/Y2 fields based on width/height
+          document.getElementById("x2Input").value = coords.x + coords.width;
+          document.getElementById("y2Input").value = coords.y + coords.height;
+        } else if (mode === "xy2" && !isNaN(coords.x2) && !isNaN(coords.y2)) {
+          // Update width/height fields based on X2/Y2
+          document.getElementById("widthInput").value = coords.width;
+          document.getElementById("heightInput").value = coords.height;
+        }
+      }
+
+      // Draw bounding box
+      function drawBoundingBox() {
+        if (!originalImage) {
+          alert("Please upload an image first");
+          return;
+        }
+
+        // Get input values
+        const label = document.getElementById("labelInput").value.trim();
+        const coords = getBoundingBoxCoords();
+        const { x, y, width, height } = coords;
+
+        // Validate inputs
+        if (!label) {
+          alert("Please enter a button label");
+          return;
+        }
+
+        if (isNaN(x) || isNaN(y) || isNaN(width) || isNaN(height)) {
+          alert("Please enter valid numeric coordinates");
+          return;
+        }
+
+        if (width <= 0 || height <= 0) {
+          alert("Width and height must be positive numbers");
+          return;
+        }
+
+        // Sync the input fields
+        syncInputFields();
+
+        // Clear canvas and redraw image
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(originalImage, 0, 0);
+
+        // Draw bounding box (similar to the overlay generator)
+        ctx.strokeStyle = "#ff0000"; // Red color
+        ctx.lineWidth = 5;
+        ctx.strokeRect(x, y, width, height);
+
+        // Add slight dimming to rest of image
+        ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw bright white overlay inside bounding box
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.fillRect(x, y, width, height);
+
+        // Redraw the red border on top
+        ctx.strokeStyle = "#ff0000";
+        ctx.lineWidth = 5;
+        ctx.strokeRect(x, y, width, height);
+
+        // Draw quadrant system (cross lines)
+        const centerX = x + width / 2;
+        const centerY = y + height / 2;
+
+        ctx.strokeStyle = "#ff0000";
+        ctx.lineWidth = 4;
+        ctx.setLineDash([10, 10]);
+
+        // Vertical line
+        ctx.beginPath();
+        ctx.moveTo(centerX, y);
+        ctx.lineTo(centerX, y + height);
+        ctx.stroke();
+
+        // Horizontal line
+        ctx.beginPath();
+        ctx.moveTo(x, centerY);
+        ctx.lineTo(x + width, centerY);
+        ctx.stroke();
+
+        ctx.setLineDash([]); // Reset to solid lines
+
+        // Draw quadrant numbers
+        ctx.fillStyle = "#000000";
+        ctx.font = "bold 28px Arial";
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 4;
+        const quadrantOffset = 18;
+
+        // Helper function to draw outlined text
+        const drawOutlinedText = (text, x, y) => {
+          ctx.strokeText(text, x, y);
+          ctx.fillText(text, x, y);
+        };
+
+        // Draw quadrant numbers
+        drawOutlinedText("1", x + quadrantOffset, y + 32);
+        drawOutlinedText("2", centerX + quadrantOffset, y + 32);
+        drawOutlinedText("3", x + quadrantOffset, centerY + 32);
+        drawOutlinedText("4", centerX + quadrantOffset, centerY + 32);
+
+        // Draw main label
+        const labelText = `${label}`;
+        const labelPadding = 12;
+        const labelHeight = 36;
+
+        ctx.font = "bold 20px Arial";
+        const textMetrics = ctx.measureText(labelText);
+        const labelWidth = textMetrics.width + labelPadding * 2;
+
+        // Label background with gradient
+        const gradient = ctx.createLinearGradient(x, y - labelHeight - 4, x, y);
+        gradient.addColorStop(0, "#ff0000");
+        gradient.addColorStop(1, "#cc0000");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, y - labelHeight - 4, labelWidth, labelHeight);
+
+        // Label text
+        ctx.fillStyle = "white";
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 2;
+        ctx.strokeText(labelText, x + labelPadding, y - 14);
+        ctx.fillText(labelText, x + labelPadding, y - 14);
+
+        // Draw center intersection point
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 12, 0, 2 * Math.PI);
+        ctx.fill();
+
+        // Black border for center point
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 12, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        // Store current bounding box
+        currentBoundingBox = { x, y, width, height, label };
+
+        console.log(
+          `✅ Bounding box drawn: ${label} at (${x}, ${y}) ${width}x${height}`
+        );
+        updateCoordinatesDisplay();
+      }
+
+      // Clear canvas
+      function clearCanvas() {
+        if (!originalImage) {
+          alert("Please upload an image first");
+          return;
+        }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(originalImage, 0, 0);
+        currentBoundingBox = null;
+
+        console.log("🗑️ Canvas cleared");
+        updateCoordinatesDisplay();
+      }
+
+      // Update coordinates display
+      function updateCoordinatesDisplay() {
+        const display = document.getElementById("coordinatesDisplay");
+
+        if (!originalImage) {
+          display.textContent = "No image loaded";
+          return;
+        }
+
+        if (!currentBoundingBox) {
+          const mode = document.getElementById("inputMode").value;
+          const modeText = mode === "wh" ? "Width/Height mode" : "X2/Y2 mode";
+
+          display.innerHTML = `
+Image: ${originalImage.width}x${originalImage.height}
+Input Mode: ${modeText}
+No bounding box drawn yet`;
+          return;
+        }
+
+        const { x, y, width, height, label } = currentBoundingBox;
+        const centerX = x + width / 2;
+        const centerY = y + height / 2;
+        const x2 = x + width;
+        const y2 = y + height;
+        const mode = document.getElementById("inputMode").value;
+        const modeText = mode === "wh" ? "Width/Height mode" : "X2/Y2 mode";
+
+        display.innerHTML = `
+Image: ${originalImage.width}x${originalImage.height}
+Input Mode: ${modeText}
+Label: ${label}
+Top-left: (${x}, ${y})
+${mode === "wh" ? `Size: ${width}x${height}` : `Bottom-right: (${x2}, ${y2})`}
+Center: (${centerX}, ${centerY})`;
+      }
+
+      // Add event listeners for real-time syncing
+      function addInputEventListeners() {
+        // Add change listeners to all input fields for real-time sync
+        [
+          "xInput",
+          "yInput",
+          "widthInput",
+          "heightInput",
+          "x2Input",
+          "y2Input",
+        ].forEach((id) => {
+          const element = document.getElementById(id);
+          if (element) {
+            element.addEventListener("input", syncInputFields);
+            element.addEventListener("change", updateCoordinatesDisplay);
+          }
+        });
+      }
+
+      // Export image
+      function exportImage() {
+        if (!originalImage) {
+          alert("Please upload an image first");
+          return;
+        }
+
+        if (!currentBoundingBox) {
+          alert("Please draw a bounding box first");
+          return;
+        }
+
+        // Create download
+        const link = document.createElement("a");
+        link.download = `${
+          currentBoundingBox.label
+        }_bounding_box_${Date.now()}.png`;
+        link.href = canvas.toDataURL();
+        link.click();
+
+        console.log(`💾 Image exported: ${link.download}`);
+      }
+
+      // Initialize when page loads
+      window.addEventListener("load", function () {
+        initCanvas();
+        addInputEventListeners();
+        console.log(
+          "🎯 Manual Bounding Box Tool initialized with dual input modes"
+        );
+      });
+    </script>
+  </body>
+</html>
