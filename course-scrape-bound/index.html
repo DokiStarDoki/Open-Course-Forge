@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GPT-4 Vision Button Detector</title>
+    <title>GPT-4 Vision Single-Button Detector</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -29,14 +29,16 @@
               d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
             ></path>
           </svg>
-          GPT-4 Vision Button Detector
+          GPT-4 Vision Single-Button Detector
         </h1>
 
         <div class="info-banner">
-          <h3>Using GPT-4 Vision API</h3>
+          <h3>🎯 Single-Button Visual Feedback Analysis - Refactored</h3>
           <p>
-            This uses OpenAI's GPT-4V with your existing API key. The prompt is
-            loaded from prompt.txt for easy customization!
+            Enhanced with modular components: Direct alignment checking,
+            systematic analysis fallback, smart nudging engine, and advanced
+            overlay generation. Each button analyzed individually with
+            systematic overlap detection.
           </p>
           <p class="small-text">
             Make sure prompt.txt is in the same folder as this HTML file.
@@ -50,8 +52,8 @@
             <label for="debugToggle">🔍 Enable Debug Mode</label>
           </div>
           <p class="debug-help">
-            Debug mode shows detailed logs of API calls, visual feedback cycles,
-            and bounding box analysis
+            Debug mode shows detailed logs of LLM conversations, nudging events,
+            and single-button analysis verification across all components
           </p>
         </div>
 
@@ -71,7 +73,7 @@
           </p>
         </div>
 
-        <div class="grid grid-lg-3">
+        <div class="grid grid-lg-2">
           <!-- Upload Section -->
           <div>
             <div class="upload-area">
@@ -96,7 +98,7 @@
                   ></path>
                 </svg>
                 <p class="upload-text">
-                  Upload screenshot for button detection
+                  Upload screenshot for single-button analysis
                 </p>
                 <button class="btn btn-primary">Choose Image</button>
               </div>
@@ -122,32 +124,10 @@
                       stroke-linecap="round"
                       stroke-linejoin="round"
                       stroke-width="2"
-                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                    ></path>
-                  </svg>
-                  Standard Analysis
-                </button>
-
-                <button
-                  id="progressiveBtn"
-                  class="btn btn-full"
-                  style="background-color: #10b981; color: white"
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
                       d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                     ></path>
                   </svg>
-                  Visual Feedback Analysis
+                  🎯 Start Enhanced Single-Button Analysis
                 </button>
               </div>
             </div>
@@ -157,7 +137,9 @@
           <div>
             <div id="loading" class="loading-container hidden">
               <div class="loading-spinner"></div>
-              <p class="loading-text">Analyzing with GPT-4 Vision...</p>
+              <p class="loading-text">
+                Starting enhanced single-button analysis...
+              </p>
             </div>
 
             <div id="results" class="hidden">
@@ -165,7 +147,7 @@
               <div id="resultsContent"></div>
 
               <div class="export-section">
-                <h4 class="export-title">Export Coordinates</h4>
+                <h4 class="export-title">Export Results</h4>
                 <button id="exportJson" class="btn btn-export">
                   <svg
                     width="16"
@@ -183,41 +165,72 @@
                   </svg>
                   Export JSON
                 </button>
+                <button
+                  onclick="exportAnalysisReport()"
+                  class="btn btn-export ml-2"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    ></path>
+                  </svg>
+                  Export Report
+                </button>
               </div>
             </div>
-          </div>
 
-          <!-- Debug Section -->
-          <div>
+            <!-- Debug Section -->
             <div id="debugPanel" class="debug-panel hidden">
               <div class="debug-header">
-                <span>🔍 Debug Information</span>
-                <span>Real-time Logging</span>
+                <span>🔍 Enhanced Single-Button Analysis Debug</span>
+                <span>Modular Component Logging</span>
               </div>
 
               <div class="debug-tabs">
                 <button class="debug-tab active" onclick="showDebugTab('logs')">
-                  📝 Process Logs
+                  💬 LLM Conversations
                 </button>
-                <button class="debug-tab" onclick="showDebugTab('cycles')">
+                <button class="debug-tab" onclick="showDebugTab('feedback')">
                   🔄 Feedback Cycles
+                </button>
+                <button class="debug-tab" onclick="showDebugTab('components')">
+                  🧩 Component Status
                 </button>
               </div>
 
               <div id="debugLogs" class="debug-content">
                 <div id="debugContent">
                   <p>
-                    Enable debug mode and run an analysis to see detailed logs
-                    here.
+                    Enable debug mode and run analysis to see detailed LLM
+                    conversations, alignment checks, systematic analysis, and
+                    nudging events.
                   </p>
                 </div>
               </div>
 
-              <div id="debugCycles" class="debug-content hidden">
-                <div id="sliceViewer">
+              <div id="debugFeedback" class="debug-content hidden">
+                <div id="feedbackViewer">
                   <p>
-                    No feedback cycles created yet. Run Visual Feedback Analysis
-                    to see cross-grid overlays.
+                    No feedback cycles created yet. Run analysis to see
+                    individual button processing details across all components.
+                  </p>
+                </div>
+              </div>
+
+              <div id="debugComponents" class="debug-content hidden">
+                <div id="componentsViewer">
+                  <p>
+                    Component status and statistics will appear here when
+                    analysis runs.
                   </p>
                 </div>
               </div>
@@ -227,13 +240,22 @@
       </div>
     </div>
 
-    <!-- Load all component scripts in dependency order -->
-    <script src="Debug-Logger.js"></script>
-    <script src="Image-Processor.js"></script>
-    <script src="GPT4-Vision-Detector.js"></script>
-    <script src="Feedback-Analyzer.js"></script>
-    <script src="Progressive-Slicer.js"></script>
-    <script src="UI-Controller.js"></script>
+    <!-- Load refactored component scripts in correct order -->
+    <script src="debug-logger.js"></script>
+    <script src="image-processor.js"></script>
+    <script src="gpt4-vision-detector.js"></script>
+
+    <!-- Load new specialized components -->
+    <script src="alignment-analyzer.js"></script>
+    <script src="systematic-analyzer.js"></script>
+    <script src="nudging-engine.js"></script>
+    <script src="overlay-generator.js"></script>
+
+    <!-- Load refactored main orchestrator -->
+    <script src="feedback-analyzer.js"></script>
+
+    <!-- Load UI and app controllers -->
+    <script src="ui-controller.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

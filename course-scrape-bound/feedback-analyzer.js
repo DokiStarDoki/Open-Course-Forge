@@ -1,729 +1,750 @@
-// FeedbackAnalyzer.js - Enhanced visual feedback cycle logic with better error handling
+// FeedbackAnalyzer.js - Main orchestrator for single-button focused visual feedback
 class FeedbackAnalyzer {
   constructor(detector, imageProcessor) {
     this.detector = detector;
     this.imageProcessor = imageProcessor;
+    this.currentMode = "single_button_focused";
+
+    // Initialize specialized components
+    this.alignmentAnalyzer = new AlignmentAnalyzer(detector);
+    this.systematicAnalyzer = new SystematicAnalyzer(detector);
+    this.nudgingEngine = new NudgingEngine();
+    this.overlayGenerator = new OverlayGenerator();
+
+    console.log("🎯 FeedbackAnalyzer initialized with specialized components");
   }
 
-  // Main visual feedback analysis with 3 cycles
+  // Main visual feedback analysis with enhanced single-button verification
   async analyzeWithVisualFeedback(originalFile, imageDimensions) {
-    console.log("🎯 Starting visual feedback analysis");
+    console.log("🎯 Starting SINGLE-BUTTON focused visual feedback analysis");
     this.detector.apiCallCount = 1; // Count initial analysis
 
-    // Initialize debug logging
-    if (typeof debugLogger !== "undefined") {
-      debugLogger.clear();
-      debugLogger.addLog("info", "Visual Feedback Analysis Started", {
-        imageDimensions,
-        maxCycles: 3,
-        timestamp: new Date().toISOString(),
-      });
-    }
+    // Initialize debug logging with session tracking
+    this.initializeDebugSession();
 
     try {
-      // Step 1: Initial detection
-      const initialAnalysis = await this.detector.analyzeImageForButtons(
-        originalFile
-      );
-
-      if (typeof debugLogger !== "undefined") {
-        debugLogger.addLog("api-call", "Initial Detection Complete", {
-          callNumber: 1,
-          buttonsFound: initialAnalysis.detected_buttons?.length || 0,
-          response: initialAnalysis,
-        });
-      }
+      // Step 1: Initial detection (this analyzes ALL buttons at once)
+      const initialAnalysis = await this.performInitialDetection(originalFile);
 
       if (
         !initialAnalysis.detected_buttons ||
         initialAnalysis.detected_buttons.length === 0
       ) {
+        console.log("❌ No buttons found in initial detection");
         return initialAnalysis;
       }
 
       console.log(
-        "✅ Initial detection found " +
-          initialAnalysis.detected_buttons.length +
-          " buttons"
+        `✅ Initial detection found ${initialAnalysis.detected_buttons.length} buttons`
       );
+      console.log("🔄 Now switching to SINGLE-BUTTON analysis mode...");
 
       // Convert to bounding box format for feedback cycles
-      let currentButtons = initialAnalysis.detected_buttons.map((button) => ({
-        reference_name: button.reference_name,
-        description: button.description,
-        element_type: button.element_type,
-        confidence: button.confidence,
-        bounding_box: {
-          x: Math.max(
-            0,
-            button.center_coordinates.x - button.estimated_size.width / 2
-          ),
-          y: Math.max(
-            0,
-            button.center_coordinates.y - button.estimated_size.height / 2
-          ),
-          width: button.estimated_size.width,
-          height: button.estimated_size.height,
+      let currentButtons = this.convertToBoundingBoxFormat(
+        initialAnalysis.detected_buttons
+      );
+
+      this.logModeSwitch(currentButtons);
+
+      // Step 2: Run feedback cycles with CONFIRMED single-button focus
+      const feedbackCycles = await this.runFeedbackCycles(
+        originalFile,
+        currentButtons,
+        imageDimensions
+      );
+
+      // Finalize and return results
+      return this.finalizeAnalysisResults(currentButtons, feedbackCycles);
+    } catch (error) {
+      this.logAnalysisError(error);
+      throw error;
+    } finally {
+      this.cleanupAnalysis();
+    }
+  }
+
+  // Initialize debug session
+  initializeDebugSession() {
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.clear();
+      debugLogger.startAnalysisSession();
+      debugLogger.currentAnalysisSession.mode = "single_button_visual_feedback";
+
+      debugLogger.addLog(
+        "info",
+        "🎯 SINGLE-BUTTON Visual Feedback Analysis Started",
+        {
+          maxCycles: 3,
+          approach: "single_button_focus_CONFIRMED",
+          mode: this.currentMode,
+          timestamp: new Date().toISOString(),
+        }
+      );
+    }
+  }
+
+  // Perform initial detection of ALL buttons
+  async performInitialDetection(originalFile) {
+    console.log("📸 Step 1: Initial detection of ALL buttons...");
+    const initialAnalysis = await this.detector.analyzeImageForButtons(
+      originalFile
+    );
+
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.addLLMConversation(
+        "initial_detection_all_buttons",
+        {
+          name: "ALL_BUTTONS",
+          count: initialAnalysis.detected_buttons?.length || 0,
         },
-      }));
+        {
+          prompt: "Initial detection prompt (see prompt.txt)",
+          imageUrl: "original_image",
+          model: "gpt-4o",
+          attempt: 1,
+        },
+        {
+          raw: JSON.stringify(initialAnalysis, null, 2),
+          parsed: initialAnalysis,
+          parsing_successful: initialAnalysis.detected_buttons?.length > 0,
+          response_type: "initial_detection",
+        },
+        {
+          stage: "initial_detection",
+          buttonsFound: initialAnalysis.detected_buttons?.length || 0,
+        }
+      );
 
-      // Step 2: Run feedback cycles
-      const feedbackCycles = [];
-      let cycleNumber = 1;
-      const maxCycles = 3;
-      let consecutiveFailures = 0;
-      const maxConsecutiveFailures = 2;
+      debugLogger.addLog(
+        "api-call",
+        "✅ Initial Detection - ALL BUTTONS AT ONCE",
+        {
+          callNumber: 1,
+          buttonsFound: initialAnalysis.detected_buttons?.length || 0,
+          response: initialAnalysis,
+          mode: "ANALYZE_ALL_BUTTONS_TOGETHER",
+        }
+      );
+    }
 
-      while (cycleNumber <= maxCycles) {
-        console.log(`🔄 Running feedback cycle ${cycleNumber}/${maxCycles}`);
+    return initialAnalysis;
+  }
 
-        // Create overlay with bounding boxes and cross-grid system
-        const overlayImageUrl =
-          await this.imageProcessor.createBoundingBoxOverlay(
+  // Convert detected buttons to bounding box format
+  convertToBoundingBoxFormat(detectedButtons) {
+    return detectedButtons.map((button) => ({
+      reference_name: button.reference_name,
+      description: button.description,
+      element_type: button.element_type,
+      confidence: button.confidence,
+      bounding_box: {
+        x: Math.max(
+          0,
+          button.center_coordinates.x - button.estimated_size.width / 2
+        ),
+        y: Math.max(
+          0,
+          button.center_coordinates.y - button.estimated_size.height / 2
+        ),
+        width: button.estimated_size.width,
+        height: button.estimated_size.height,
+      },
+    }));
+  }
+
+  // Log mode switch to single-button analysis
+  logModeSwitch(currentButtons) {
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.addLog("mode-switch", `🔄 SWITCHING TO SINGLE-BUTTON MODE`, {
+        fromMode: "initial_all_buttons_detection",
+        toMode: "single_button_individual_analysis",
+        buttonsToAnalyze: currentButtons.length,
+        buttonNames: currentButtons.map((b) => b.reference_name),
+      });
+    }
+  }
+
+  // Run feedback cycles with single-button processing
+  async runFeedbackCycles(originalFile, currentButtons, imageDimensions) {
+    const feedbackCycles = [];
+    let cycleNumber = 1;
+    const maxCycles = 3;
+    let consecutiveFailures = 0;
+    const maxConsecutiveFailures = 2;
+
+    while (cycleNumber <= maxCycles) {
+      console.log(
+        `🔄 CYCLE ${cycleNumber}/${maxCycles}: Analyzing ${currentButtons.length} buttons ONE BY ONE`
+      );
+
+      this.logCycleStart(cycleNumber, currentButtons);
+
+      // Process each button individually in this cycle
+      const cycleResults = await this.processSingleButtonCycle(
+        originalFile,
+        currentButtons,
+        cycleNumber,
+        imageDimensions
+      );
+
+      // Create cycle data
+      const cycleData = this.createCycleData(
+        cycleNumber,
+        currentButtons,
+        cycleResults
+      );
+      feedbackCycles.push(cycleData);
+
+      this.logCycleComplete(cycleNumber, cycleResults);
+
+      // Check for consecutive failures
+      if (
+        this.shouldStopDueToFailures(
+          cycleResults,
+          consecutiveFailures,
+          maxConsecutiveFailures,
+          cycleData
+        )
+      ) {
+        consecutiveFailures++;
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+          console.log(
+            "🛑 Too many consecutive cycle failures, stopping analysis"
+          );
+          cycleData.termination_reason = "consecutive_cycle_failures";
+          break;
+        }
+      } else {
+        consecutiveFailures = 0;
+      }
+
+      // Apply corrections if any (smart nudging)
+      const shouldContinue = await this.handleCycleCorrections(
+        cycleResults,
+        currentButtons,
+        cycleData
+      );
+
+      if (!shouldContinue) break;
+
+      cycleNumber++;
+    }
+
+    return feedbackCycles;
+  }
+
+  // Process each button individually in a cycle
+  async processSingleButtonCycle(
+    originalFile,
+    currentButtons,
+    cycleNumber,
+    imageDimensions
+  ) {
+    console.log(
+      `🔍 Processing ${currentButtons.length} buttons INDIVIDUALLY in cycle ${cycleNumber}`
+    );
+
+    const individualResults = [];
+    const allCorrections = [];
+    const buttonAnalyses = [];
+    let totalConfidence = 0;
+    let totalAccuracy = 0;
+    let successfulParses = 0;
+    let nudgingCount = 0;
+
+    // Create combined overlay for display purposes (using imageProcessor as fallback)
+    let combinedOverlayUrl;
+    try {
+      combinedOverlayUrl = await this.overlayGenerator.createCombinedOverlay(
+        originalFile,
+        currentButtons,
+        cycleNumber
+      );
+    } catch (error) {
+      console.log("📋 Using imageProcessor fallback for combined overlay");
+      combinedOverlayUrl = await this.imageProcessor.createBoundingBoxOverlay(
+        originalFile,
+        currentButtons,
+        cycleNumber
+      );
+    }
+
+    // Process each button ONE BY ONE
+    for (
+      let buttonIndex = 0;
+      buttonIndex < currentButtons.length;
+      buttonIndex++
+    ) {
+      const button = currentButtons[buttonIndex];
+      console.log(
+        `🎯 INDIVIDUAL ANALYSIS ${buttonIndex + 1}/${currentButtons.length}: ${
+          button.reference_name
+        }`
+      );
+
+      this.logSingleButtonStart(buttonIndex, button, cycleNumber);
+
+      try {
+        // Create single-button overlay
+        const singleButtonOverlay =
+          await this.overlayGenerator.createSingleButtonOverlay(
             originalFile,
-            currentButtons,
+            button,
+            buttonIndex + 1,
             cycleNumber
           );
 
-        if (typeof debugLogger !== "undefined") {
-          debugLogger.addLog("cycle", `Feedback Cycle ${cycleNumber}`, {
-            cycleNumber,
-            buttonsToAnalyze: currentButtons.length,
-            overlayCreated: true,
-            consecutiveFailures: consecutiveFailures,
-          });
-        }
-
-        // Get feedback from vision model with retry logic
+        // Analyze this single button (using direct alignment check)
         this.detector.apiCallCount++;
-        const feedbackResult = await this.performVisualFeedbackCycleWithRetry(
-          overlayImageUrl,
-          currentButtons,
+        const result = await this.analyzeSingleButton(
+          singleButtonOverlay,
+          button,
+          buttonIndex + 1,
           cycleNumber
         );
 
-        // Store cycle results
-        const cycleData = {
-          cycle: cycleNumber,
-          type: cycleNumber === 1 ? "initial_detection" : "refinement",
-          buttons: [...currentButtons],
-          overlayImageUrl: overlayImageUrl,
-          buttonAnalyses: feedbackResult.buttonAnalyses || [],
-          corrections: feedbackResult.corrections || [],
-          confidence: feedbackResult.confidence || 50,
-          overallAccuracy: feedbackResult.overallAccuracy || 50,
-          parsing_successful: feedbackResult.parsing_successful || false,
-          raw_response: feedbackResult.raw_response || "",
-        };
+        // Process results
+        const processedResult = this.processSingleButtonResult(
+          result,
+          button,
+          buttonIndex
+        );
 
-        feedbackCycles.push(cycleData);
+        // Update counters from processed result
+        if (result.parsing_successful) {
+          successfulParses++;
+          totalConfidence += result.confidence || 50;
+          totalAccuracy += result.overallAccuracy || 50;
 
-        if (typeof debugLogger !== "undefined") {
-          debugLogger.addLog(
-            "feedback",
-            `Cycle ${cycleNumber} Analysis Complete`,
-            {
-              cycleNumber,
-              corrections: feedbackResult.corrections?.length || 0,
-              confidence: feedbackResult.confidence,
-              buttonAnalyses: feedbackResult.buttonAnalyses?.length || 0,
-              parsing_successful: feedbackResult.parsing_successful,
-              response_type: feedbackResult.response_type || "unknown",
-            }
-          );
-        }
-
-        // Check if parsing was successful
-        if (!feedbackResult.parsing_successful) {
-          consecutiveFailures++;
-          console.log(
-            `⚠️ Cycle ${cycleNumber} parsing failed (${consecutiveFailures}/${maxConsecutiveFailures} consecutive failures)`
-          );
-
-          if (consecutiveFailures >= maxConsecutiveFailures) {
-            console.log(
-              "🛑 Too many consecutive parsing failures, stopping analysis"
-            );
-            cycleData.termination_reason = "consecutive_parsing_failures";
-            break;
+          if (result.buttonAnalyses) {
+            buttonAnalyses.push(...result.buttonAnalyses);
           }
 
-          // Continue to next cycle even with parsing failure
-          cycleNumber++;
-          continue;
-        } else {
-          // Reset consecutive failures on successful parse
-          consecutiveFailures = 0;
-        }
-
-        // Apply corrections if any
-        if (
-          feedbackResult.corrections &&
-          feedbackResult.corrections.length > 0
-        ) {
-          console.log(
-            `📝 Applying ${feedbackResult.corrections.length} corrections`
-          );
-          currentButtons = this.applyBoundingBoxCorrections(
-            currentButtons,
-            feedbackResult.corrections
-          );
-
-          // Add correction metadata to cycle
-          cycleData.corrections_applied = feedbackResult.corrections.length;
-        } else {
-          // Only stop early if we have high confidence AND successful parsing
-          if (feedbackResult.overallAccuracy >= 90) {
-            console.log(
-              "✅ High accuracy achieved with successful parsing - stopping early"
+          if (result.corrections && result.corrections.length > 0) {
+            const smartCorrections = this.nudgingEngine.applySmartNudging(
+              result.corrections,
+              button,
+              buttonIndex
             );
-            cycleData.termination_reason = "high_accuracy_achieved";
-            break;
-          } else {
-            console.log(
-              `📊 No corrections but accuracy only ${feedbackResult.overallAccuracy}% - continuing`
-            );
+            allCorrections.push(...smartCorrections);
+            nudgingCount += smartCorrections.length;
           }
         }
 
-        cycleNumber++;
+        this.logSingleButtonComplete(buttonIndex, button, result);
+      } catch (error) {
+        console.error(
+          `❌ Error analyzing button ${buttonIndex + 1} INDIVIDUALLY:`,
+          error
+        );
+        individualResults.push({
+          buttonIndex: buttonIndex + 1,
+          buttonName: button.reference_name,
+          result: {
+            parsing_successful: false,
+            error: error.message,
+            response_type: "error",
+          },
+          analysisMode: "SINGLE_BUTTON_INDIVIDUAL_FAILED",
+        });
+      }
+    }
+
+    // Calculate cycle statistics
+    const successRate =
+      currentButtons.length > 0 ? successfulParses / currentButtons.length : 0;
+    const averageConfidence =
+      successfulParses > 0 ? totalConfidence / successfulParses : 25;
+    const averageAccuracy =
+      successfulParses > 0 ? totalAccuracy / successfulParses : 25;
+
+    console.log(
+      `📊 CYCLE ${cycleNumber} SUMMARY: ${successfulParses}/${currentButtons.length} successful, ${nudgingCount} nudging events`
+    );
+
+    return {
+      individualResults,
+      allCorrections,
+      buttonAnalyses,
+      averageConfidence,
+      averageAccuracy,
+      allSuccessful: successfulParses === currentButtons.length,
+      successRate,
+      buttonsProcessed: currentButtons.length,
+      combinedOverlayUrl,
+      nudgingCount,
+      processingMode: "SINGLE_BUTTON_INDIVIDUAL_CONFIRMED",
+    };
+  }
+
+  // Analyze a single button (primary method uses direct alignment, fallback to systematic)
+  async analyzeSingleButton(
+    overlayImageUrl,
+    button,
+    buttonNumber,
+    cycleNumber
+  ) {
+    console.log(`🤖 Analyzing single button: ${button.reference_name}`);
+
+    try {
+      // Primary method: Direct alignment check (based on successful manual test)
+      const alignmentResult =
+        await this.alignmentAnalyzer.analyzeSingleButtonAlignment(
+          overlayImageUrl,
+          button,
+          buttonNumber,
+          cycleNumber
+        );
+
+      if (alignmentResult.parsing_successful) {
+        console.log(
+          `✅ Direct alignment check successful for button ${buttonNumber}`
+        );
+        return alignmentResult;
       }
 
-      if (typeof debugLogger !== "undefined") {
-        debugLogger.addLog("success", "Visual Feedback Analysis Completed", {
+      console.log(
+        `⚠️ Direct alignment check failed, trying systematic analysis for button ${buttonNumber}`
+      );
+
+      // Fallback method: Systematic analysis
+      const systematicResult = await this.systematicAnalyzer.analyzeSystematic(
+        overlayImageUrl,
+        button,
+        buttonNumber,
+        cycleNumber
+      );
+
+      if (systematicResult.parsing_successful) {
+        console.log(
+          `✅ Systematic analysis successful for button ${buttonNumber}`
+        );
+        return systematicResult;
+      }
+
+      console.log(`⚠️ Both methods failed for button ${buttonNumber}`);
+      return alignmentResult; // Return the first attempt's result
+    } catch (error) {
+      console.error(
+        `❌ Error in single button analysis for button ${buttonNumber}:`,
+        error
+      );
+      return {
+        corrections: [],
+        confidence: 25,
+        overallAccuracy: 25,
+        parsing_successful: false,
+        response_type: "analysis_error",
+        raw_response: error.message,
+        buttonAnalyses: [],
+      };
+    }
+  }
+
+  // Create cycle data structure
+  createCycleData(cycleNumber, currentButtons, cycleResults) {
+    return {
+      cycle: cycleNumber,
+      type:
+        cycleNumber === 1 ? "initial_detection" : "single_button_refinement",
+      buttons: [...currentButtons],
+      button_analyses: cycleResults.buttonAnalyses,
+      corrections: cycleResults.allCorrections,
+      confidence: cycleResults.averageConfidence,
+      overallAccuracy: cycleResults.averageAccuracy,
+      parsing_successful: cycleResults.allSuccessful,
+      buttons_processed: cycleResults.buttonsProcessed,
+      individual_results: cycleResults.individualResults,
+      overlayImageUrl: cycleResults.combinedOverlayUrl,
+      processing_mode: "SINGLE_BUTTON_INDIVIDUAL",
+    };
+  }
+
+  // Handle cycle corrections and nudging
+  async handleCycleCorrections(cycleResults, currentButtons, cycleData) {
+    if (cycleResults.allCorrections.length > 0) {
+      console.log(
+        `📝 Applying ${cycleResults.allCorrections.length} corrections with SMART NUDGING`
+      );
+
+      this.logNudgingStart(cycleResults.allCorrections);
+
+      // Apply corrections using the nudging engine
+      const correctedButtons = this.nudgingEngine.applyBoundingBoxCorrections(
+        currentButtons,
+        cycleResults.allCorrections
+      );
+
+      // Update the current buttons array
+      currentButtons.splice(0, currentButtons.length, ...correctedButtons);
+
+      cycleData.corrections_applied = cycleResults.allCorrections.length;
+      cycleData.nudging_applied = true;
+
+      return true; // Continue processing
+    } else {
+      cycleData.nudging_applied = false;
+
+      // Check if we should stop early due to high accuracy
+      if (cycleResults.averageAccuracy >= 90 && cycleResults.allSuccessful) {
+        console.log(
+          "✅ High accuracy achieved with successful parsing - stopping early"
+        );
+        cycleData.termination_reason = "high_accuracy_achieved";
+        return false; // Stop processing
+      } else {
+        console.log(
+          `📊 No corrections but accuracy only ${cycleResults.averageAccuracy}% - continuing`
+        );
+        return true; // Continue processing
+      }
+    }
+  }
+
+  // Check if we should stop due to consecutive failures
+  shouldStopDueToFailures(
+    cycleResults,
+    consecutiveFailures,
+    maxConsecutiveFailures,
+    cycleData
+  ) {
+    if (!cycleResults.allSuccessful && cycleResults.successRate < 0.5) {
+      console.log(
+        `⚠️ Cycle mostly failed (${
+          cycleResults.successRate * 100
+        }% success rate) - ${
+          consecutiveFailures + 1
+        }/${maxConsecutiveFailures} consecutive failures`
+      );
+      return true;
+    }
+    return false;
+  }
+
+  // Finalize analysis results
+  finalizeAnalysisResults(currentButtons, feedbackCycles) {
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.endAnalysisSession();
+      debugLogger.addLog(
+        "success",
+        "✅ SINGLE-BUTTON Visual Feedback Analysis Completed",
+        {
           totalCycles: feedbackCycles.length,
           totalApiCalls: this.detector.apiCallCount,
           finalButtonCount: currentButtons.length,
-          consecutiveFailures: consecutiveFailures,
-          successful_cycles: feedbackCycles.filter((c) => c.parsing_successful)
-            .length,
-        });
-      }
+          approach: "single_button_focus_CONFIRMED",
+          sessionSummary: debugLogger.getAnalysisSummary(),
+        }
+      );
+    }
 
-      // Convert back to center coordinates format for consistency
-      const finalButtons = currentButtons.map((button) => ({
-        reference_name: button.reference_name,
-        description: button.description,
-        element_type: button.element_type,
-        confidence: button.confidence,
-        center_coordinates: {
-          x: Math.round(button.bounding_box.x + button.bounding_box.width / 2),
-          y: Math.round(button.bounding_box.y + button.bounding_box.height / 2),
-        },
-        estimated_size: {
-          width: button.bounding_box.width,
-          height: button.bounding_box.height,
-        },
-        refinement_cycles: feedbackCycles.length,
-      }));
+    // Convert back to center coordinates format for consistency
+    const finalButtons = currentButtons.map((button) => ({
+      reference_name: button.reference_name,
+      description: button.description,
+      element_type: button.element_type,
+      confidence: button.confidence,
+      center_coordinates: {
+        x: Math.round(button.bounding_box.x + button.bounding_box.width / 2),
+        y: Math.round(button.bounding_box.y + button.bounding_box.height / 2),
+      },
+      estimated_size: {
+        width: button.bounding_box.width,
+        height: button.bounding_box.height,
+      },
+      refinement_cycles: feedbackCycles.length,
+      processing_mode: "SINGLE_BUTTON_CONFIRMED",
+    }));
 
-      return {
-        detected_buttons: finalButtons,
-        analysis_summary: {
-          total_elements_found: finalButtons.length,
-          image_description: `Visual feedback analysis with ${
-            feedbackCycles.length
-          } refinement cycles (${
-            feedbackCycles.filter((c) => c.parsing_successful).length
-          } successful)`,
-        },
-        analysis_method: "visual_feedback",
-        total_api_calls: this.detector.apiCallCount,
-        feedback_cycles: feedbackCycles,
-        debug_log:
-          typeof debugLogger !== "undefined"
-            ? debugLogger.getLogs()
-            : undefined,
-      };
-    } catch (error) {
-      if (typeof debugLogger !== "undefined") {
-        debugLogger.addLog("error", "Visual Feedback Analysis Failed", {
+    return {
+      detected_buttons: finalButtons,
+      analysis_summary: {
+        total_elements_found: finalButtons.length,
+        image_description: `SINGLE-BUTTON focused visual feedback analysis with ${feedbackCycles.length} refinement cycles`,
+      },
+      analysis_method: "single_button_visual_feedback_CONFIRMED",
+      total_api_calls: this.detector.apiCallCount,
+      feedback_cycles: feedbackCycles,
+      processing_confirmation: {
+        mode: "SINGLE_BUTTON_INDIVIDUAL_PROCESSING",
+        initial_detection: "ALL_BUTTONS_AT_ONCE",
+        refinement_cycles: "ONE_BUTTON_AT_A_TIME",
+        nudging_applied: feedbackCycles.some((c) => c.nudging_applied),
+      },
+      debug_log:
+        typeof debugLogger !== "undefined" ? debugLogger.getLogs() : undefined,
+    };
+  }
+
+  // Cleanup analysis resources
+  cleanupAnalysis() {
+    // Clear overlay cache to free memory
+    this.overlayGenerator.clearCache();
+
+    // Clear nudging history
+    this.nudgingEngine.clearHistory();
+  }
+
+  // Helper logging methods
+  logCycleStart(cycleNumber, currentButtons) {
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.addLog(
+        "cycle-start",
+        `🔄 Starting SINGLE-BUTTON Cycle ${cycleNumber}`,
+        {
+          cycleNumber,
+          mode: "SINGLE_BUTTON_INDIVIDUAL_PROCESSING",
+          buttonsInCycle: currentButtons.length,
+          buttonNames: currentButtons.map((b) => b.reference_name),
+        }
+      );
+    }
+  }
+
+  logCycleComplete(cycleNumber, cycleResults) {
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.addLog(
+        "feedback",
+        `✅ Cycle ${cycleNumber} SINGLE-BUTTON Analysis Complete`,
+        {
+          cycleNumber,
+          mode: "SINGLE_BUTTON_CONFIRMED",
+          buttonsProcessed: cycleResults.buttonsProcessed,
+          totalCorrections: cycleResults.allCorrections.length,
+          averageConfidence: cycleResults.averageConfidence,
+          parsing_successful: cycleResults.allSuccessful,
+          individual_success_rate: cycleResults.successRate,
+          nudgingEventsInCycle: cycleResults.nudgingCount || 0,
+        }
+      );
+    }
+  }
+
+  logSingleButtonStart(buttonIndex, button, cycleNumber) {
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.addLog(
+        "single-button-start",
+        `🎯 Starting INDIVIDUAL analysis for button ${buttonIndex + 1}`,
+        {
+          buttonIndex: buttonIndex + 1,
+          buttonName: button.reference_name,
+          cycleNumber: cycleNumber,
+          mode: "SINGLE_BUTTON_INDIVIDUAL_CONFIRMED",
+        }
+      );
+    }
+  }
+
+  logSingleButtonComplete(buttonIndex, button, result) {
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.addLog(
+        "single-button-complete",
+        `✅ Button ${buttonIndex + 1} (${
+          button.reference_name
+        }) INDIVIDUAL analysis complete`,
+        {
+          buttonIndex: buttonIndex + 1,
+          buttonName: button.reference_name,
+          parsing_successful: result.parsing_successful,
+          corrections: result.corrections?.length || 0,
+          confidence: result.confidence,
+          response_type: result.response_type,
+          nudgingApplied: result.corrections?.length > 0,
+        }
+      );
+    }
+  }
+
+  logNudgingStart(corrections) {
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.addLog(
+        "nudging-start",
+        `📝 Starting SMART NUDGING for ${corrections.length} corrections`,
+        {
+          correctionsToApply: corrections.length,
+          correctionDetails: corrections.map((c) => ({
+            button: c.button_number,
+            type: c.nudge_type,
+            direction: c.nudge_direction,
+            hasSystematicAnalysis: !!c.systematic_analysis,
+            hasAlignmentAnalysis: !!c.alignment_analysis,
+          })),
+        }
+      );
+    }
+  }
+
+  logAnalysisError(error) {
+    if (typeof debugLogger !== "undefined") {
+      debugLogger.addLog(
+        "error",
+        "❌ SINGLE-BUTTON Visual Feedback Analysis Failed",
+        {
           error: error.message,
           apiCallsUsed: this.detector.apiCallCount,
-        });
-      }
-      console.error("Error in visual feedback analysis:", error);
-      throw error;
-    }
-  }
-
-  // Enhanced feedback cycle with retry logic
-  async performVisualFeedbackCycleWithRetry(
-    overlayImageUrl,
-    currentButtons,
-    cycleNumber,
-    maxRetries = 2
-  ) {
-    let lastResult = null;
-
-    for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
-      try {
-        console.log(
-          `🔄 Cycle ${cycleNumber}, Attempt ${attempt}/${maxRetries + 1}`
-        );
-
-        const result = await this.performVisualFeedbackCycle(
-          overlayImageUrl,
-          currentButtons,
-          cycleNumber,
-          attempt
-        );
-
-        // Check if we got a valid structured response
-        if (result.parsing_successful) {
-          if (typeof debugLogger !== "undefined") {
-            debugLogger.addLog(
-              "success",
-              `Cycle ${cycleNumber} successful on attempt ${attempt}`,
-              {
-                attempt,
-                corrections: result.corrections?.length || 0,
-                confidence: result.confidence,
-              }
-            );
-          }
-          return result;
         }
-
-        lastResult = result;
-
-        if (attempt <= maxRetries) {
-          console.log(
-            `⚠️ Attempt ${attempt} failed, retrying with enhanced prompt...`
-          );
-          if (typeof debugLogger !== "undefined") {
-            debugLogger.addLog(
-              "retry",
-              `Cycle ${cycleNumber} attempt ${attempt} failed, retrying`,
-              {
-                attempt,
-                response_type: result.response_type,
-                raw_response_preview:
-                  result.raw_response?.substring(0, 200) + "...",
-              }
-            );
-          }
-        }
-      } catch (error) {
-        console.error(`Error in attempt ${attempt}:`, error);
-        if (typeof debugLogger !== "undefined") {
-          debugLogger.addLog(
-            "error",
-            `Cycle ${cycleNumber} attempt ${attempt} error`,
-            {
-              attempt,
-              error: error.message,
-            }
-          );
-        }
-
-        if (attempt === maxRetries + 1) {
-          // Return a default failed result
-          return {
-            corrections: [],
-            confidence: 25,
-            overallAccuracy: 25,
-            parsing_successful: false,
-            response_type: "error",
-            raw_response: error.message,
-            buttonAnalyses: [],
-          };
-        }
-      }
-    }
-
-    // If all retries failed, return the last result
-    return (
-      lastResult || {
-        corrections: [],
-        confidence: 25,
-        overallAccuracy: 25,
-        parsing_successful: false,
-        response_type: "all_retries_failed",
-        raw_response: "All retry attempts failed",
-        buttonAnalyses: [],
-      }
-    );
-  }
-
-  // Enhanced feedback cycle with better prompting
-  async performVisualFeedbackCycle(
-    overlayImageUrl,
-    currentButtons,
-    cycleNumber,
-    attemptNumber = 1
-  ) {
-    try {
-      // Convert overlay URL to blob for API call
-      const overlayResponse = await fetch(overlayImageUrl);
-      const overlayBlob = await overlayResponse.blob();
-      const overlayFile = new File(
-        [overlayBlob],
-        `overlay_cycle_${cycleNumber}_attempt_${attemptNumber}.png`,
-        { type: "image/png" }
-      );
-
-      const base64DataURL = await this.detector.fileToBase64DataURL(
-        overlayFile
-      );
-
-      // Enhanced prompt based on attempt number
-      let feedbackPrompt = this.buildFeedbackPrompt(
-        currentButtons,
-        attemptNumber
-      );
-
-      const requestBody = {
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: feedbackPrompt,
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: base64DataURL,
-                  detail: "high",
-                },
-              },
-            ],
-          },
-        ],
-        max_tokens: 2000,
-        temperature: 0.1,
-      };
-
-      const response = await fetch(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          method: "POST",
-          headers: this.detector.headers,
-          body: JSON.stringify(requestBody),
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          "OpenAI API error: " + response.status + " - " + errorText
-        );
-      }
-
-      const result = await response.json();
-      const content = result.choices[0].message.content;
-
-      console.log(
-        `Cycle ${cycleNumber} attempt ${attemptNumber} feedback:`,
-        content.substring(0, 200) + "..."
-      );
-
-      return this.parseFeedbackResponseEnhanced(content);
-    } catch (error) {
-      console.error(
-        `Error in feedback cycle ${cycleNumber} attempt ${attemptNumber}:`,
-        error
-      );
-      throw error;
-    }
-  }
-
-  // Build enhanced feedback prompt based on attempt number
-  buildFeedbackPrompt(currentButtons, attemptNumber) {
-    const basePrompt = `CRITICAL: You must respond ONLY with the exact XML format shown below. Do not provide explanations or general advice.
-
-I have drawn bounding boxes around detected UI buttons. Each box is divided into 4 quadrants by a cross:
-
-Quadrant 1 = Top-Left
-Quadrant 2 = Top-Right  
-Quadrant 3 = Bottom-Left
-Quadrant 4 = Bottom-Right
-
-The white dot shows where I think the center of each button is.
-
-BUTTONS TO ANALYZE:
-${currentButtons
-  .map((btn, idx) => `#${idx + 1}: ${btn.reference_name} (${btn.description})`)
-  .join("\n")}
-
-For each numbered button, analyze the image and respond ONLY in this EXACT format:`;
-
-    const formatExample = `
-<feedback>
-<button_analysis>
-<button_number>1</button_number>
-<coverage>yes</coverage>
-<quadrants_with_button>1,2,3,4</quadrants_with_button>
-<center_accurate>yes</center_accurate>
-<needs_adjustment>no</needs_adjustment>
-<suggested_action>none</suggested_action>
-</button_analysis>
-<button_analysis>
-<button_number>2</button_number>
-<coverage>partial</coverage>
-<quadrants_with_button>2,4</quadrants_with_button>
-<center_accurate>no</center_accurate>
-<needs_adjustment>yes</needs_adjustment>
-<suggested_action>move box left and up</suggested_action>
-</button_analysis>
-</feedback>
-
-<corrections>
-<correction>
-<button_number>2</button_number>
-<issue>box positioned too far right and down</issue>
-<new_bbox_x>150</new_bbox_x>
-<new_bbox_y>200</new_bbox_y>
-<new_bbox_width>180</new_bbox_width>
-<new_bbox_height>45</new_bbox_height>
-</correction>
-</corrections>
-
-<summary>
-<overall_accuracy>85</overall_accuracy>
-<confidence>90</confidence>
-<buttons_needing_adjustment>1</buttons_needing_adjustment>
-<notes>Most buttons well-positioned, button 2 needs repositioning</notes>
-</summary>`;
-
-    // Enhanced prompting for retry attempts
-    if (attemptNumber > 1) {
-      return (
-        basePrompt +
-        `
-
-⚠️ PREVIOUS ATTEMPT FAILED - This is retry attempt ${attemptNumber}
-YOU MUST respond with the exact XML structure shown below.
-DO NOT provide explanations, guidance, or general advice.
-ANALYZE THE IMAGE and provide specific feedback for each button.
-
-` +
-        formatExample +
-        `
-
-RESPOND ONLY WITH XML. NO OTHER TEXT.`
       );
     }
-
-    return (
-      basePrompt +
-      formatExample +
-      `
-
-IMPORTANT: Be very precise about which quadrants contain the actual button content. Respond ONLY with the XML structure above.`
-    );
+    console.error("Error in single-button visual feedback analysis:", error);
   }
 
-  // Enhanced response parsing with better validation
-  parseFeedbackResponseEnhanced(content) {
-    try {
-      // First, detect if this is a generic/advice response
-      const adviceKeywords = [
-        "I can guide you",
-        "Here's how you can",
-        "If you provide",
-        "I'm unable to analyze",
-        "based on your description",
-        "Consider shifting",
-        "decide if the box needs",
-      ];
+  // Process single button result (helper method)
+  processSingleButtonResult(result, button, buttonIndex) {
+    // This method was used to process individual button results
+    // but the processing logic is now directly in processSingleButtonCycle
+    // This is kept for compatibility but doesn't need to do anything special
+    return {
+      processed: true,
+      buttonIndex: buttonIndex + 1,
+      buttonName: button.reference_name,
+      parsing_successful: result.parsing_successful,
+      confidence: result.confidence || 50,
+      corrections: result.corrections?.length || 0,
+    };
+  }
 
-      const isGenericAdvice = adviceKeywords.some((keyword) =>
-        content.toLowerCase().includes(keyword.toLowerCase())
-      );
+  // Public methods for verification and statistics
+  verifySingleButtonMode() {
+    return {
+      mode: this.currentMode,
+      confirmed: this.currentMode === "single_button_focused",
+      description:
+        "This analyzer is configured for single-button individual analysis",
+      components: {
+        alignmentAnalyzer: !!this.alignmentAnalyzer,
+        systematicAnalyzer: !!this.systematicAnalyzer,
+        nudgingEngine: !!this.nudgingEngine,
+        overlayGenerator: !!this.overlayGenerator,
+      },
+    };
+  }
 
-      if (isGenericAdvice) {
-        console.log(
-          "🚫 Detected generic advice response, not structured feedback"
-        );
-        return {
-          buttonAnalyses: [],
-          corrections: [],
-          confidence: 30,
-          overallAccuracy: 30,
-          parsing_successful: false,
-          response_type: "generic_advice",
-          raw_response: content,
-        };
-      }
+  getAnalysisStats() {
+    const baseStats = {
+      mode_verification: this.verifySingleButtonMode(),
+      overlay_cache: this.overlayGenerator.getCacheStats(),
+      nudging_stats: this.nudgingEngine.getNudgingStats(),
+    };
 
-      // Try to parse XML structure
-      const feedbackMatch = content.match(/<feedback>([\s\S]*?)<\/feedback>/);
-      const correctionsMatch = content.match(
-        /<corrections>([\s\S]*?)<\/corrections>/
-      );
-      const summaryMatch = content.match(/<summary>([\s\S]*?)<\/summary>/);
-
-      if (!feedbackMatch && !correctionsMatch && !summaryMatch) {
-        console.log("🚫 No XML structure found in response");
-        return {
-          buttonAnalyses: [],
-          corrections: [],
-          confidence: 20,
-          overallAccuracy: 20,
-          parsing_successful: false,
-          response_type: "no_xml_structure",
-          raw_response: content,
-        };
-      }
-
-      const buttonAnalyses = [];
-      const corrections = [];
-      let confidence = 50;
-      let overallAccuracy = 50;
-
-      // Parse button analyses
-      if (feedbackMatch) {
-        const feedbackXML = feedbackMatch[1];
-        const analysisMatches = feedbackXML.match(
-          /<button_analysis>([\s\S]*?)<\/button_analysis>/g
-        );
-
-        if (analysisMatches) {
-          analysisMatches.forEach((analysisXML) => {
-            const analysis = {};
-
-            const fields = {
-              button_number: /<button_number>(\d+)<\/button_number>/,
-              coverage: /<coverage>(.*?)<\/coverage>/,
-              quadrants_with_button:
-                /<quadrants_with_button>(.*?)<\/quadrants_with_button>/,
-              center_accurate: /<center_accurate>(.*?)<\/center_accurate>/,
-              needs_adjustment: /<needs_adjustment>(.*?)<\/needs_adjustment>/,
-              suggested_action: /<suggested_action>(.*?)<\/suggested_action>/,
-            };
-
-            for (const [key, regex] of Object.entries(fields)) {
-              const match = analysisXML.match(regex);
-              if (match) {
-                if (key === "button_number") {
-                  analysis[key] = parseInt(match[1]);
-                } else if (key === "quadrants_with_button") {
-                  analysis[key] = match[1]
-                    .split(",")
-                    .map((q) => parseInt(q.trim()))
-                    .filter((q) => !isNaN(q));
-                } else {
-                  analysis[key] = match[1].trim();
-                }
-              }
-            }
-
-            if (analysis.button_number !== undefined) {
-              buttonAnalyses.push(analysis);
-            }
-          });
-        }
-      }
-
-      // Parse corrections
-      if (correctionsMatch) {
-        const correctionsXML = correctionsMatch[1];
-        const correctionMatches = correctionsXML.match(
-          /<correction>([\s\S]*?)<\/correction>/g
-        );
-
-        if (correctionMatches) {
-          correctionMatches.forEach((correctionXML) => {
-            const correction = {};
-
-            const fields = {
-              button_number: /<button_number>(\d+)<\/button_number>/,
-              issue: /<issue>(.*?)<\/issue>/,
-              new_bbox_x: /<new_bbox_x>(\d+)<\/new_bbox_x>/,
-              new_bbox_y: /<new_bbox_y>(\d+)<\/new_bbox_y>/,
-              new_bbox_width: /<new_bbox_width>(\d+)<\/new_bbox_width>/,
-              new_bbox_height: /<new_bbox_height>(\d+)<\/new_bbox_height>/,
-            };
-
-            for (const [key, regex] of Object.entries(fields)) {
-              const match = correctionXML.match(regex);
-              if (match) {
-                if (key === "issue") {
-                  correction[key] = match[1].trim();
-                } else {
-                  correction[key] = parseInt(match[1]);
-                }
-              }
-            }
-
-            if (correction.button_number !== undefined) {
-              corrections.push(correction);
-            }
-          });
-        }
-      }
-
-      // Parse summary
-      if (summaryMatch) {
-        const summaryXML = summaryMatch[1];
-        const confidenceMatch = summaryXML.match(
-          /<confidence>(\d+)<\/confidence>/
-        );
-        const accuracyMatch = summaryXML.match(
-          /<overall_accuracy>(\d+)<\/overall_accuracy>/
-        );
-
-        if (confidenceMatch) confidence = parseInt(confidenceMatch[1]);
-        if (accuracyMatch) overallAccuracy = parseInt(accuracyMatch[1]);
-      }
-
-      // Determine if parsing was successful
-      const parsing_successful =
-        (buttonAnalyses.length > 0 || corrections.length > 0) &&
-        (feedbackMatch || correctionsMatch || summaryMatch);
-
+    if (typeof debugLogger !== "undefined") {
+      const summary = debugLogger.getAnalysisSummary();
       return {
-        buttonAnalyses,
-        corrections,
-        confidence,
-        overallAccuracy,
-        parsing_successful,
-        response_type: parsing_successful ? "structured_xml" : "partial_xml",
-        raw_response: content,
-      };
-    } catch (error) {
-      console.error("Error parsing enhanced feedback response:", error);
-      return {
-        buttonAnalyses: [],
-        corrections: [],
-        confidence: 25,
-        overallAccuracy: 25,
-        parsing_successful: false,
-        response_type: "parsing_error",
-        raw_response: content,
+        ...baseStats,
+        ...summary,
+        llm_conversations: debugLogger.getLLMConversations().length,
+        nudging_events: debugLogger.getNudgingEvents().length,
       };
     }
+
+    return baseStats;
   }
-
-  // Apply corrections to button bounding boxes
-  applyBoundingBoxCorrections(buttons, corrections) {
-    const correctedButtons = [...buttons];
-
-    corrections.forEach((correction) => {
-      const buttonIndex = correction.button_number - 1; // Convert to 0-based index
-      if (buttonIndex >= 0 && buttonIndex < correctedButtons.length) {
-        const originalBbox = correctedButtons[buttonIndex].bounding_box;
-
-        correctedButtons[buttonIndex].bounding_box = {
-          x: correction.new_bbox_x,
-          y: correction.new_bbox_y,
-          width: correction.new_bbox_width,
-          height: correction.new_bbox_height,
-        };
-
-        // Add correction metadata
-        correctedButtons[buttonIndex].correction_applied = {
-          issue: correction.issue,
-          original_bbox: originalBbox,
-          correction_cycle: correction.cycle || "unknown",
-        };
-      }
-    });
-
-    return correctedButtons;
+  // Method to get component references (for debugging)
+  getComponents() {
+    return {
+      alignmentAnalyzer: this.alignmentAnalyzer,
+      systematicAnalyzer: this.systematicAnalyzer,
+      nudgingEngine: this.nudgingEngine,
+      overlayGenerator: this.overlayGenerator,
+    };
   }
 }
