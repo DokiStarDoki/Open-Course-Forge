@@ -6,6 +6,7 @@ class UIController {
     this.analysisResults = null;
     this.imageDimensions = { width: 0, height: 0 };
     this.currentDebugTab = "logs";
+    this.config = null; // Store loaded config
   }
 
   // Initialize DOM elements and event listeners
@@ -51,6 +52,9 @@ class UIController {
         }
       }
 
+      // Try to load config file with API key
+      this.loadConfigFile();
+
       // Add event listeners
       this.setupEventListeners();
 
@@ -63,6 +67,113 @@ class UIController {
       alert("Failed to initialize application: " + error.message);
       return false;
     }
+  }
+
+  // Load config file if available
+  async loadConfigFile() {
+    try {
+      console.log("🔑 Attempting to load local.config.json...");
+      const response = await fetch("./local.config.json");
+
+      if (response.ok) {
+        const config = await response.json();
+        console.log("✅ Config file loaded successfully");
+
+        // Auto-fill API key if available and autoLoadKey is enabled
+        if (config.apiKey && config.settings?.autoLoadKey !== false) {
+          this.elements.apiKeyInput.value = config.apiKey;
+          console.log("🔑 API key auto-loaded from config");
+
+          // Show a subtle success indicator
+          this.showConfigLoadedIndicator();
+        }
+
+        // Apply other settings if available
+        if (config.settings?.debugMode === true && this.elements.debugToggle) {
+          this.elements.debugToggle.checked = true;
+          this.toggleDebugMode();
+          console.log("🔍 Debug mode auto-enabled from config");
+        }
+
+        // Store config for other components to use
+        this.config = config;
+      } else if (response.status === 404) {
+        console.log("ℹ️ No local.config.json file found - this is optional");
+        this.showCreateConfigHelp();
+      } else {
+        console.warn(
+          "⚠️ Config file exists but couldn't be loaded:",
+          response.status
+        );
+      }
+    } catch (error) {
+      console.log(
+        "ℹ️ Config file not available - this is optional:",
+        error.message
+      );
+      // Only show help on first visit (not on every refresh)
+      if (!localStorage.getItem("config-help-shown")) {
+        this.showCreateConfigHelp();
+        localStorage.setItem("config-help-shown", "true");
+      }
+    }
+  }
+
+  // Show indicator that config was loaded
+  showConfigLoadedIndicator() {
+    const indicator = document.createElement("div");
+    indicator.innerHTML = "🔑 API key loaded from local.config.json";
+    indicator.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #dcfce7;
+      color: #166534;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid #bbf7d0;
+      font-size: 14px;
+      z-index: 1000;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    `;
+
+    document.body.appendChild(indicator);
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+      if (document.body.contains(indicator)) {
+        document.body.removeChild(indicator);
+      }
+    }, 3000);
+  }
+
+  // Show help for creating config file
+  showCreateConfigHelp() {
+    const helpDiv = document.createElement("div");
+    helpDiv.innerHTML = `
+      <div style="background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px; padding: 12px; margin: 16px 0;">
+        <h4 style="margin: 0 0 8px 0; color: #92400e;">💡 Tip: Auto-load your API key</h4>
+        <p style="margin: 0 0 8px 0; font-size: 14px; color: #92400e;">
+          Create a <code>local.config.json</code> file in the same folder as this HTML file:
+        </p>
+        <pre style="background: #fffbeb; padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto;">{
+  "apiKey": "sk-your-openai-api-key-here",
+  "settings": {
+    "autoLoadKey": true,
+    "debugMode": false
+  }
+}</pre>
+        <p style="margin: 8px 0 0 0; font-size: 12px; color: #b45309;">
+          ⚠️ Don't commit local.config.json to git - add it to .gitignore!
+        </p>
+        <button onclick="this.parentElement.remove()" style="float: right; margin-top: 8px; padding: 4px 8px; font-size: 12px; background: #fbbf24; border: none; border-radius: 4px; cursor: pointer;">Got it</button>
+        <div style="clear: both;"></div>
+      </div>
+    `;
+
+    // Insert after the API key input
+    const apiKeyGroup = this.elements.apiKeyInput.parentElement;
+    apiKeyGroup.parentNode.insertBefore(helpDiv, apiKeyGroup.nextSibling);
   }
 
   setupEventListeners() {
@@ -134,6 +245,7 @@ class UIController {
         apiKey: this.elements.apiKeyInput.value.trim(),
         selectedFile: this.selectedFile,
         imageDimensions: this.imageDimensions,
+        config: this.config, // Pass config to other components
       },
     });
     document.dispatchEvent(event);
@@ -632,6 +744,10 @@ class UIController {
 
   getApiKey() {
     return this.elements.apiKeyInput.value.trim();
+  }
+
+  getConfig() {
+    return this.config;
   }
 
   // Simplified validation methods
