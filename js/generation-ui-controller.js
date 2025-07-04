@@ -1,47 +1,101 @@
 /**
- * Course Forge MVP - Generation UI Controller (WITH GROUND TRUTH SUPPORT)
- * Handles content generation display, interaction, and UI management with ground truth editing
+ * Generation UI Controller - Manages content generation display and interactions
  */
-
 class GenerationUIController {
-  constructor(stateManager, eventSystem, contentGenerator) {
+  constructor(stateManager, eventSystem) {
     this.stateManager = stateManager;
     this.eventSystem = eventSystem;
-    this.contentGenerator = contentGenerator;
-    this.eventHandlers = new Map();
-    this.editingSession = new Map(); // Track editing sessions
-    this.autoSaveTimeouts = {}; // Track auto-save timeouts
+    this.contentGenerator = null; // Will be set later
+    this.autoSaveTimeouts = {};
+    this.editingSession = new Map();
 
-    this.setupEventListeners();
-
-    if (CONFIG.DEBUG.ENABLED) {
-      console.log(
-        "GenerationUIController initialized with ground truth support"
-      );
-    }
+    this.bindEvents();
   }
 
   /**
-   * Set up event listeners
+   * Initialize the controller
+   */
+  initialize() {
+    this.updateGenerationUI();
+    this.setupEventListeners();
+  }
+
+  /**
+   * Set content generator reference
+   */
+  setContentGenerator(contentGenerator) {
+    this.contentGenerator = contentGenerator;
+  }
+
+  /**
+   * Bind event listeners
+   */
+  bindEvents() {
+    // State change listeners
+    this.stateManager.subscribe("chunks", this.updateGenerationUI.bind(this));
+
+    // Custom event listeners
+    this.eventSystem.on(
+      "content:generated",
+      this.handleContentGenerated.bind(this)
+    );
+    this.eventSystem.on(
+      "content:generation-failed",
+      this.handleGenerationFailed.bind(this)
+    );
+    this.eventSystem.on("content:reset", this.handleContentReset.bind(this));
+  }
+
+  /**
+   * Setup DOM event listeners
    */
   setupEventListeners() {
-    // React to chunks changes
-    this.stateManager.subscribe("chunks", () => {
-      this.updateGenerationUI();
-    });
+    // Generate all button
+    const generateAllBtn = document.getElementById("generateAllBtn");
+    if (generateAllBtn) {
+      generateAllBtn.addEventListener("click", () => {
+        this.generateAllContent();
+      });
+    }
 
-    // Listen for content generation events
-    this.eventSystem.on("content:generated", () => {
-      this.updateGenerationUI();
-    });
+    // Generate selected button
+    const generateSelectedBtn = document.getElementById("generateSelectedBtn");
+    if (generateSelectedBtn) {
+      generateSelectedBtn.addEventListener("click", () => {
+        this.generateSelected();
+      });
+    }
 
-    this.eventSystem.on("content:updated", () => {
-      this.updateGenerationUI();
-    });
+    // Select all checkbox
+    const selectAllCheckbox = document.getElementById("selectAllSlides");
+    if (selectAllCheckbox) {
+      selectAllCheckbox.addEventListener("change", (e) => {
+        this.toggleSelectAll(e.target.checked);
+      });
+    }
 
-    this.eventSystem.on("content:generation-failed", (data) => {
-      this.handleGenerationError(data.chunkId, data.error);
-    });
+    // Filter controls
+    const generationFilter = document.getElementById("generationFilter");
+    if (generationFilter) {
+      generationFilter.addEventListener("change", () => {
+        this.applyFilter();
+      });
+    }
+
+    const typeFilter = document.getElementById("typeFilter");
+    if (typeFilter) {
+      typeFilter.addEventListener("change", () => {
+        this.applyFilter();
+      });
+    }
+
+    // Clear filters button
+    const clearFiltersBtn = document.getElementById("clearFiltersBtn");
+    if (clearFiltersBtn) {
+      clearFiltersBtn.addEventListener("click", () => {
+        this.clearFilters();
+      });
+    }
   }
 
   /**
@@ -49,426 +103,96 @@ class GenerationUIController {
    */
   updateGenerationUI() {
     const container = document.getElementById("generationContainer");
-    const chunks = this.stateManager.getState("chunks") || [];
-
     if (!container) return;
 
+    const chunks = this.stateManager.getState("chunks") || [];
+
     if (chunks.length === 0) {
-      this.renderEmptyState(container);
-    } else {
-      this.renderGenerationView(container, chunks);
+      container.innerHTML = `
+        <div class="empty-state">
+          <i data-lucide="layout"></i>
+          <h3>No slides available</h3>
+          <p>Create chunks in the previous step to generate content</p>
+        </div>
+      `;
+
+      if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+      }
+      return;
     }
 
-    // Setup inline editing after UI update
-    this.setupInlineEditing();
+    // Render generation items
+    const generationHTML = chunks
+      .map((chunk) => this.renderGenerationItem(chunk))
+      .join("");
 
-    // Reinitialize icons
+    container.innerHTML = generationHTML;
+
+    // Initialize Lucide icons
     if (typeof lucide !== "undefined") {
       lucide.createIcons();
     }
-  }
 
-  /**
-   * Setup inline editing for all contenteditable elements
-   */
-  setupInlineEditing() {
-    // Remove existing handlers to prevent duplicates
-    this.cleanupEditingHandlers();
+    // Update statistics
+    this.updateGenerationStats(chunks);
 
-    // Find all contenteditable elements
-    const editableElements = document.querySelectorAll(
-      '[contenteditable="true"]'
-    );
-
-    editableElements.forEach((element) => {
-      const chunkId = element.dataset.chunkId;
-      const field = element.dataset.field;
-
-      if (!chunkId || !field) return;
-
-      // Create handler functions
-      const focusHandler = (e) =>
-        this.startInlineEdit(e.target, chunkId, field);
-      const blurHandler = (e) => this.saveInlineEdit(e.target);
-      const keydownHandler = (e) => this.handleInlineEditKeydown(e, e.target);
-
-      // Add event listeners
-      element.addEventListener("focus", focusHandler);
-      element.addEventListener("blur", blurHandler);
-      element.addEventListener("keydown", keydownHandler);
-
-      // Store handlers for cleanup
-      const handlerKey = `${chunkId}-${field}`;
-      this.eventHandlers.set(handlerKey, {
-        element,
-        handlers: {
-          focus: focusHandler,
-          blur: blurHandler,
-          keydown: keydownHandler,
-        },
-      });
-    });
-
-    if (CONFIG.DEBUG.ENABLED) {
-      console.log(
-        `Setup inline editing for ${editableElements.length} elements`
-      );
-    }
-  }
-
-  /**
-   * Cleanup editing handlers
-   */
-  cleanupEditingHandlers() {
-    this.eventHandlers.forEach(({ element, handlers }) => {
-      element.removeEventListener("focus", handlers.focus);
-      element.removeEventListener("blur", handlers.blur);
-      element.removeEventListener("keydown", handlers.keydown);
-    });
-
-    this.eventHandlers.clear();
-  }
-
-  /**
-   * Start inline editing session
-   */
-  startInlineEdit(element, chunkId, field) {
-    const sessionKey = `${chunkId}-${field}`;
-
-    // Store original value
-    this.editingSession.set(sessionKey, {
-      originalValue: this.getElementContent(element),
-      element: element,
-      chunkId: chunkId,
-      field: field,
-      startTime: Date.now(),
-    });
-
-    // Add editing class
-    element.classList.add("editing");
-
-    if (CONFIG.DEBUG.ENABLED) {
-      console.log(`Started editing: ${field} for chunk ${chunkId}`);
-    }
-  }
-
-  /**
-   * Save inline edit
-   */
-  saveInlineEdit(element) {
-    const chunkId = element.dataset.chunkId;
-    const field = element.dataset.field;
-    const sessionKey = `${chunkId}-${field}`;
-
-    if (!chunkId || !field) return;
-
-    const session = this.editingSession.get(sessionKey);
-    if (!session) return;
-
-    const newValue = this.getElementContent(element).trim();
-    const hasChanged = newValue !== session.originalValue;
-
-    // Remove editing class
-    element.classList.remove("editing");
-
-    if (hasChanged) {
-      // Clear any pending auto-save
-      if (this.autoSaveTimeouts[sessionKey]) {
-        clearTimeout(this.autoSaveTimeouts[sessionKey]);
-      }
-
-      // Update content immediately
-      this.updateChunkContent(chunkId, field, newValue);
-
-      if (CONFIG.DEBUG.ENABLED) {
-        console.log(`Saved edit: ${field} = "${newValue}"`);
-      }
-    }
-
-    // Clean up session
-    this.editingSession.delete(sessionKey);
-  }
-
-  /**
-   * Cancel inline editing
-   */
-  cancelEditing(chunkId, field, element) {
-    const sessionKey = `${chunkId}-${field}`;
-    const session = this.editingSession.get(sessionKey);
-
-    if (session) {
-      // Restore original value
-      if (element.tagName === "INPUT") {
-        element.value = session.originalValue;
-      } else {
-        element.textContent = session.originalValue;
-      }
-
-      element.classList.remove("editing");
-      this.editingSession.delete(sessionKey);
-
-      if (CONFIG.DEBUG.ENABLED) {
-        console.log(`Cancelled editing: ${field}`);
-      }
-    }
-  }
-
-  /**
-   * Handle keydown events during inline editing
-   */
-  handleInlineEditKeydown(event, element) {
-    const chunkId = element.dataset.chunkId;
-    const field = element.dataset.field;
-
-    if (!chunkId || !field) return;
-
-    // Escape key: cancel editing
-    if (event.key === "Escape") {
-      event.preventDefault();
-      this.cancelEditing(chunkId, field, element);
-      return;
-    }
-
-    // Enter behavior for different field types
-    if (event.key === "Enter") {
-      if (
-        field.includes("title") ||
-        field.includes("header") ||
-        field === "groundTruth"
-      ) {
-        // Single-line fields: blur on Enter (except ground truth which can be multi-line)
-        if (field !== "groundTruth") {
-          event.preventDefault();
-          element.blur();
-        }
-      }
-      // Multi-line fields: allow normal Enter behavior
-    }
-  }
-
-  /**
-   * Get content from element based on its type
-   */
-  getElementContent(element) {
-    if (element.tagName === "INPUT") {
-      return element.value;
-    } else if (element.tagName === "SELECT") {
-      return element.value;
-    } else {
-      // For contenteditable elements, return text content for most fields
-      return element.textContent || "";
-    }
-  }
-
-  /**
-   * Update chunk content in state (ENHANCED FOR GROUND TRUTH)
-   */
-  updateChunkContent(chunkId, field, value) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
-
-    if (chunkIndex < 0) {
-      console.error(`Chunk not found: ${chunkId}`);
-      return;
-    }
-
-    const chunk = chunks[chunkIndex];
-
-    // Handle ground truth updates directly on chunk object
-    if (field === "groundTruth") {
-      chunk.groundTruth = value;
-
-      // Visual feedback for ground truth update
-      const element = document.querySelector(
-        `[data-chunk-id="${chunkId}"][data-field="groundTruth"]`
-      );
-      if (element) {
-        element.classList.add("updated");
-        setTimeout(() => element.classList.remove("updated"), 1000);
-      }
-
-      StatusManager.showSuccess("Ground truth updated");
-    } else if (chunk.generatedContent) {
-      // Handle generated content updates
-      this.setNestedValue(chunk.generatedContent, field, value);
-    } else {
-      console.warn(`No content to update for field: ${field}`);
-      return;
-    }
-
-    // Update the chunk in state
-    chunks[chunkIndex] = chunk;
-    this.stateManager.setState("chunks", chunks);
-
-    if (CONFIG.DEBUG.ENABLED) {
-      console.log(`Updated ${field} for chunk ${chunkId}:`, value);
-    }
-
-    // Emit update event
-    this.eventSystem.emit("content:updated", {
-      chunkId,
-      field,
-      value,
-    });
-  }
-
-  /**
-   * Set nested value using dot notation (e.g., "bullets.0", "icons.1.title")
-   */
-  setNestedValue(obj, path, value) {
-    const keys = path.split(".");
-    let current = obj;
-
-    for (let i = 0; i < keys.length - 1; i++) {
-      const key = keys[i];
-
-      if (!current[key]) {
-        // Create array if next key is numeric, object otherwise
-        const nextKey = keys[i + 1];
-        current[key] = /^\d+$/.test(nextKey) ? [] : {};
-      }
-
-      current = current[key];
-    }
-
-    current[keys[keys.length - 1]] = value;
-  }
-
-  /**
-   * Render empty state
-   */
-  renderEmptyState(container) {
-    container.innerHTML = `
-      <div class="generation-empty-state">
-        <i data-lucide="layers"></i>
-        <h3>No Content to Generate</h3>
-        <p>Create some chunks first to begin generating slide content.</p>
-        <button class="btn btn-primary" onclick="app.showTab('chunks')">
-          <i data-lucide="arrow-left"></i>
-          Go to Chunks
-        </button>
-      </div>
-    `;
-  }
-
-  /**
-   * Render generation view
-   */
-  renderGenerationView(container, chunks) {
-    const sortedChunks = chunks.sort((a, b) => a.order - b.order);
-    const stats = this.calculateGenerationStats(chunks);
-
-    container.innerHTML = `
-      <div class="generation-header">
-        <div class="generation-stats">
-          ${this.renderGenerationStats(stats)}
-        </div>
-        <div class="generation-actions">
-          <button class="btn btn-primary" onclick="generationUIController.generateAllContent()">
-            <i data-lucide="sparkles"></i>
-            Generate All
-          </button>
-          <button class="btn btn-secondary" onclick="generationUIController.generateSelected()">
-            <i data-lucide="check-square"></i>
-            Generate Selected
-          </button>
-          <div class="generation-filters">
-            <select id="generationFilter" onchange="generationUIController.applyFilter()">
-              <option value="all">All Slides</option>
-              <option value="generated">Generated</option>
-              <option value="pending">Pending</option>
-            </select>
-            <select id="typeFilter" onchange="generationUIController.applyFilter()">
-              <option value="all">All Types</option>
-              ${CONFIG.SLIDE_TYPES.map(
-                (type) => `<option value="${type.value}">${type.label}</option>`
-              ).join("")}
-            </select>
-          </div>
-        </div>
-      </div>
-      <div class="slides-container">
-        ${sortedChunks
-          .map((chunk) => this.renderGenerationItem(chunk))
-          .join("")}
-      </div>
-    `;
-
+    // Setup interactions
     this.setupGenerationInteractions();
-  }
-
-  /**
-   * Calculate generation statistics
-   */
-  calculateGenerationStats(chunks) {
-    return {
-      total: chunks.length,
-      generated: chunks.filter((chunk) => chunk.generatedContent).length,
-      pending: chunks.filter(
-        (chunk) => !chunk.generatedContent && !chunk.isLocked
-      ).length,
-      locked: chunks.filter((chunk) => chunk.isLocked).length,
-    };
-  }
-
-  /**
-   * Render generation statistics
-   */
-  renderGenerationStats(stats) {
-    return `
-      <div class="stats-grid">
-        <div class="stat-item">
-          <div class="stat-value">${stats.total}</div>
-          <div class="stat-label">Total Slides</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">${stats.generated}</div>
-          <div class="stat-label">Generated</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">${stats.pending}</div>
-          <div class="stat-label">Pending</div>
-        </div>
-      </div>
-    `;
   }
 
   /**
    * Render individual generation item
    */
   renderGenerationItem(chunk) {
-    const hasContent = !!chunk.generatedContent;
+    const hasContent = chunk.generatedContent !== null;
     const isProcessing =
       this.contentGenerator &&
       this.contentGenerator.currentlyGenerating.has(chunk.id);
 
+    const generationDate = chunk.lastGenerated
+      ? new Date(chunk.lastGenerated).toLocaleDateString()
+      : null;
+
     return `
-      <div class="generation-item ${hasContent ? "has-content" : ""} ${
+      <div class="generation-item ${hasContent ? "has-content" : "pending"} ${
       isProcessing ? "processing" : ""
-    }" 
+    } ${chunk.isLocked ? "locked" : ""}" 
            data-chunk-id="${chunk.id}" 
-           data-slide-type="${chunk.slideType}">
+           data-slide-type="${chunk.slideType}"
+           data-generation-status="${hasContent ? "generated" : "pending"}">
         <div class="generation-header">
-          <div class="chunk-info">
-            <input type="checkbox" class="generation-checkbox" data-chunk-id="${
-              chunk.id
-            }">
-            <div class="chunk-details">
-              <h3 class="chunk-title">${this.escapeHtml(chunk.title)}</h3>
-              <div class="chunk-meta">
-                <span class="slide-type-badge">${this.getSlideTypeLabel(
-                  chunk.slideType
-                )}</span>
-                <span class="content-status ${
-                  hasContent ? "generated" : "pending"
-                }">
-                  ${hasContent ? "Generated" : "Pending"}
-                </span>
-              </div>
+          <div class="generation-select">
+            <input type="checkbox" 
+                   class="generation-checkbox" 
+                   data-chunk-id="${chunk.id}"
+                   ${chunk.isLocked ? "disabled" : ""}>
+          </div>
+          <div class="generation-info">
+            <h3 class="generation-title">${this.escapeHtml(chunk.title)}</h3>
+            <div class="generation-meta">
+              <span class="slide-type">${this.getSlideTypeLabel(
+                chunk.slideType
+              )}</span>
+              ${
+                chunk.isLocked
+                  ? '<span class="badge badge-warning">Locked</span>'
+                  : ""
+              }
+              ${
+                hasContent
+                  ? '<span class="badge badge-success">Generated</span>'
+                  : '<span class="badge badge-secondary">Pending</span>'
+              }
+              ${
+                generationDate
+                  ? `<span class="generation-date">Generated: ${generationDate}</span>`
+                  : ""
+              }
             </div>
           </div>
-          <div class="generation-controls">
-            <button class="btn btn-primary" 
+          <div class="generation-actions">
+            <button class="btn btn-primary generation-btn" 
                     onclick="generationUIController.${
                       hasContent
                         ? "regenerateChunkContent"
@@ -499,6 +223,11 @@ class GenerationUIController {
                   chunk.id
                 }')" ${!hasContent ? "disabled" : ""}>
                   <i data-lucide="copy"></i> Copy Content
+                </button>
+                <button onclick="generationUIController.copySlideTranscript('${
+                  chunk.id
+                }')" ${!hasContent ? "disabled" : ""}>
+                  <i data-lucide="volume-2"></i> Copy Transcript
                 </button>
                 <button onclick="generationUIController.previewSlide('${
                   chunk.id
@@ -704,6 +433,360 @@ class GenerationUIController {
   }
 
   /**
+   * Update generation statistics
+   */
+  updateGenerationStats(chunks) {
+    const statsElement = document.getElementById("generationStats");
+    if (!statsElement) return;
+
+    const stats = {
+      total: chunks.length,
+      generated: chunks.filter((c) => c.generatedContent).length,
+      pending: chunks.filter((c) => !c.generatedContent && !c.isLocked).length,
+      locked: chunks.filter((c) => c.isLocked).length,
+    };
+
+    statsElement.innerHTML = `
+      <div class="stat-item">
+        <span class="stat-label">Total Slides:</span>
+        <span class="stat-value">${stats.total}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Generated:</span>
+        <span class="stat-value">${stats.generated}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Pending:</span>
+        <span class="stat-value">${stats.pending}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Locked:</span>
+        <span class="stat-value">${stats.locked}</span>
+      </div>
+    `;
+  }
+
+  /**
+   * Toggle select all slides
+   */
+  toggleSelectAll(checked) {
+    const checkboxes = document.querySelectorAll(
+      ".generation-checkbox:not(:disabled)"
+    );
+    checkboxes.forEach((checkbox) => {
+      checkbox.checked = checked;
+    });
+  }
+
+  /**
+   * Apply filter to generation items
+   */
+  applyFilter() {
+    const generationFilter = document.getElementById("generationFilter");
+    const typeFilter = document.getElementById("typeFilter");
+
+    const generationStatus = generationFilter ? generationFilter.value : "all";
+    const slideType = typeFilter ? typeFilter.value : "all";
+
+    const items = document.querySelectorAll(".generation-item");
+
+    items.forEach((item) => {
+      const itemStatus = item.dataset.generationStatus;
+      const itemType = item.dataset.slideType;
+
+      const statusMatch =
+        generationStatus === "all" || itemStatus === generationStatus;
+      const typeMatch = slideType === "all" || itemType === slideType;
+
+      item.style.display = statusMatch && typeMatch ? "block" : "none";
+    });
+
+    this.updateFilterStats();
+  }
+
+  /**
+   * Clear all filters
+   */
+  clearFilters() {
+    const generationFilter = document.getElementById("generationFilter");
+    const typeFilter = document.getElementById("typeFilter");
+
+    if (generationFilter) generationFilter.value = "all";
+    if (typeFilter) typeFilter.value = "all";
+
+    this.applyFilter();
+  }
+
+  /**
+   * Update filter statistics
+   */
+  updateFilterStats() {
+    const visibleItems = document.querySelectorAll(
+      '.generation-item[style=""], .generation-item:not([style*="none"])'
+    );
+    const totalItems = document.querySelectorAll(".generation-item");
+
+    // Could show "Showing X of Y slides" message if needed
+  }
+
+  /**
+   * Toggle generation actions dropdown
+   */
+  toggleGenerationActions(chunkId, button) {
+    const dropdown = document.getElementById(`gen-actions-${chunkId}`);
+    if (!dropdown) return;
+
+    // Close other dropdowns
+    document.querySelectorAll(".dropdown-menu").forEach((menu) => {
+      if (menu !== dropdown) {
+        menu.classList.remove("show");
+      }
+    });
+
+    dropdown.classList.toggle("show");
+
+    if (dropdown.classList.contains("show")) {
+      const closeHandler = (e) => {
+        if (!button.contains(e.target) && !dropdown.contains(e.target)) {
+          dropdown.classList.remove("show");
+          document.removeEventListener("click", closeHandler);
+        }
+      };
+
+      setTimeout(() => {
+        document.addEventListener("click", closeHandler);
+      }, 0);
+    }
+  }
+
+  /**
+   * Copy slide content to clipboard
+   */
+  async copySlideContent(chunkId) {
+    const chunk = this.getChunkById(chunkId);
+    if (!chunk || !chunk.generatedContent) {
+      StatusManager.showWarning("No content available to copy");
+      return;
+    }
+
+    try {
+      const content = JSON.stringify(chunk.generatedContent, null, 2);
+      await navigator.clipboard.writeText(content);
+      StatusManager.showSuccess("Content copied to clipboard");
+    } catch (error) {
+      console.error("Failed to copy content:", error);
+      StatusManager.showError("Failed to copy content");
+    }
+  }
+
+  /**
+   * Copy slide transcript to clipboard - NEW FEATURE
+   */
+  async copySlideTranscript(chunkId) {
+    const chunk = this.getChunkById(chunkId);
+    if (!chunk || !chunk.generatedContent) {
+      StatusManager.showWarning("No content available to copy");
+      return;
+    }
+
+    try {
+      let transcript = "";
+
+      // Extract transcript based on slide type
+      if (chunk.generatedContent.audioScript) {
+        transcript = chunk.generatedContent.audioScript;
+      } else {
+        // Fallback: create transcript from content
+        transcript = this.generateTranscriptFromContent(
+          chunk.generatedContent,
+          chunk.slideType
+        );
+      }
+
+      if (!transcript || transcript.trim() === "") {
+        StatusManager.showWarning("No transcript available for this slide");
+        return;
+      }
+
+      await navigator.clipboard.writeText(transcript);
+      StatusManager.showSuccess("Transcript copied to clipboard");
+    } catch (error) {
+      console.error("Failed to copy transcript:", error);
+      StatusManager.showError("Failed to copy transcript");
+    }
+  }
+
+  /**
+   * Generate transcript from content when audioScript is not available - NEW HELPER
+   */
+  generateTranscriptFromContent(content, slideType) {
+    let transcript = "";
+
+    switch (slideType) {
+      case "title":
+      case "textAndImage":
+        transcript = `${content.header || ""}\n\n${content.text || ""}`;
+        break;
+
+      case "courseInfo":
+        transcript = `${content.header || ""}\n\n${content.text || ""}`;
+        if (content.objectives) {
+          transcript += "\n\nLearning Objectives:\n";
+          content.objectives.forEach((obj) => {
+            transcript += `- ${obj}\n`;
+          });
+        }
+        break;
+
+      case "textAndBullets":
+        transcript = `${content.header || ""}\n\n${content.text || ""}`;
+        if (content.bullets) {
+          transcript += "\n\nKey Points:\n";
+          content.bullets.forEach((bullet) => {
+            transcript += `- ${bullet}\n`;
+          });
+        }
+        break;
+
+      case "iconsWithTitles":
+        transcript = `${content.header || ""}`;
+        if (content.icons) {
+          transcript += "\n\n";
+          content.icons.forEach((icon) => {
+            transcript += `${icon.title}: ${icon.description}\n`;
+          });
+        }
+        break;
+
+      case "multipleChoice":
+        transcript = `${content.question || ""}\n\n`;
+        if (content.options) {
+          content.options.forEach((option, index) => {
+            transcript += `${String.fromCharCode(65 + index)}: ${option}\n`;
+          });
+        }
+        break;
+
+      case "tabs":
+        if (Array.isArray(content.tabs)) {
+          content.tabs.forEach((tab) => {
+            transcript += `${tab.title}\n${tab.content}\n\n`;
+          });
+        }
+        break;
+
+      case "flipCards":
+        if (Array.isArray(content.cards)) {
+          content.cards.forEach((card) => {
+            transcript += `${card.front}: ${card.back}\n`;
+          });
+        }
+        break;
+
+      case "faq":
+        transcript = `${content.header || ""}\n\n`;
+        if (content.items) {
+          content.items.forEach((item) => {
+            transcript += `Q: ${item.question}\nA: ${item.answer}\n\n`;
+          });
+        }
+        break;
+
+      case "popups":
+        if (Array.isArray(content.popups)) {
+          content.popups.forEach((popup) => {
+            transcript += `${popup.title}\n${popup.content}\n\n`;
+          });
+        }
+        break;
+
+      default:
+        transcript = JSON.stringify(content, null, 2);
+    }
+
+    return transcript.trim();
+  }
+
+  /**
+   * Preview individual slide
+   */
+  previewSlide(chunkId) {
+    const chunk = this.getChunkById(chunkId);
+    if (!chunk || !chunk.generatedContent) return;
+
+    // Create single slide preview
+    const previewWindow = window.open(
+      "",
+      `slidePreview-${chunkId}`,
+      "width=800,height=600,scrollbars=yes,resizable=yes"
+    );
+
+    if (!previewWindow) {
+      StatusManager.showError(
+        "Popup blocked. Please allow popups for slide preview."
+      );
+      return;
+    }
+
+    const slideContent = window.slideRenderer
+      ? window.slideRenderer.renderSlide(chunk, false)
+      : this.renderBasicSlidePreview(chunk);
+
+    const previewHTML = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Slide Preview: ${chunk.title}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 2rem; background: #f8fafc; }
+          .preview-container { max-width: 800px; margin: 0 auto; background: white; border-radius: 0.75rem; padding: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+          .slide-title { font-size: 1.5rem; margin-bottom: 1rem; color: #1f2937; }
+        </style>
+        <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+      </head>
+      <body>
+        <div class="preview-container">
+          ${slideContent}
+        </div>
+        <script>
+          if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+          }
+        </script>
+      </body>
+      </html>
+    `;
+
+    previewWindow.document.write(previewHTML);
+    previewWindow.document.close();
+    previewWindow.focus();
+  }
+
+  /**
+   * Reset slide content
+   */
+  resetSlideContent(chunkId) {
+    const confirmed = confirm(
+      "Reset slide content? This will remove all generated content for this slide."
+    );
+    if (!confirmed) return;
+
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
+
+    if (chunkIndex >= 0) {
+      chunks[chunkIndex].generatedContent = null;
+      chunks[chunkIndex].lastGenerated = null;
+      this.stateManager.setState("chunks", chunks);
+
+      StatusManager.showSuccess("Slide content reset");
+      this.eventSystem.emit("content:reset", { chunkId });
+    }
+  }
+
+  /**
    * Setup generation interactions
    */
   setupGenerationInteractions() {
@@ -792,184 +875,43 @@ class GenerationUIController {
   }
 
   /**
-   * Apply filters to generation items
+   * Handle content generated event
    */
-  applyFilter() {
-    const generationFilter =
-      document.getElementById("generationFilter")?.value || "all";
-    const typeFilter = document.getElementById("typeFilter")?.value || "all";
+  handleContentGenerated(data) {
+    const { chunkId } = data;
+    const item = document.querySelector(`[data-chunk-id="${chunkId}"]`);
 
-    const items = document.querySelectorAll(".generation-item");
-
-    items.forEach((item) => {
-      const chunkId = item.dataset.chunkId;
-      const slideType = item.dataset.slideType;
-      const hasContent = item.classList.contains("has-content");
-
-      let show = true;
-
-      // Apply generation status filter
-      if (generationFilter === "generated" && !hasContent) show = false;
-      if (generationFilter === "pending" && hasContent) show = false;
-
-      // Apply slide type filter
-      if (typeFilter !== "all" && slideType !== typeFilter) show = false;
-
-      item.style.display = show ? "block" : "none";
-    });
-
-    this.updateFilterStats();
-  }
-
-  /**
-   * Clear all filters
-   */
-  clearFilters() {
-    const generationFilter = document.getElementById("generationFilter");
-    const typeFilter = document.getElementById("typeFilter");
-
-    if (generationFilter) generationFilter.value = "all";
-    if (typeFilter) typeFilter.value = "all";
-
-    this.applyFilter();
-  }
-
-  /**
-   * Update filter statistics
-   */
-  updateFilterStats() {
-    const visibleItems = document.querySelectorAll(
-      '.generation-item[style=""], .generation-item:not([style*="none"])'
-    );
-    const totalItems = document.querySelectorAll(".generation-item");
-
-    // Could show "Showing X of Y slides" message if needed
-  }
-
-  /**
-   * Toggle generation actions dropdown
-   */
-  toggleGenerationActions(chunkId, button) {
-    const dropdown = document.getElementById(`gen-actions-${chunkId}`);
-    if (!dropdown) return;
-
-    // Close other dropdowns
-    document.querySelectorAll(".dropdown-menu").forEach((menu) => {
-      if (menu !== dropdown) {
-        menu.classList.remove("show");
-      }
-    });
-
-    dropdown.classList.toggle("show");
-
-    if (dropdown.classList.contains("show")) {
-      const closeHandler = (e) => {
-        if (!button.contains(e.target) && !dropdown.contains(e.target)) {
-          dropdown.classList.remove("show");
-          document.removeEventListener("click", closeHandler);
-        }
-      };
-
-      setTimeout(() => {
-        document.addEventListener("click", closeHandler);
-      }, 0);
-    }
-  }
-
-  /**
-   * Copy slide content to clipboard
-   */
-  async copySlideContent(chunkId) {
-    const chunk = this.getChunkById(chunkId);
-    if (!chunk || !chunk.generatedContent) return;
-
-    try {
-      const content = JSON.stringify(chunk.generatedContent, null, 2);
-      await navigator.clipboard.writeText(content);
-      StatusManager.showSuccess("Content copied to clipboard");
-    } catch (error) {
-      console.error("Failed to copy content:", error);
-      StatusManager.showError("Failed to copy content");
-    }
-  }
-
-  /**
-   * Preview individual slide
-   */
-  previewSlide(chunkId) {
-    const chunk = this.getChunkById(chunkId);
-    if (!chunk || !chunk.generatedContent) return;
-
-    // Create single slide preview
-    const previewWindow = window.open(
-      "",
-      `slidePreview-${chunkId}`,
-      "width=800,height=600,scrollbars=yes,resizable=yes"
-    );
-
-    if (!previewWindow) {
-      StatusManager.showError(
-        "Popup blocked. Please allow popups for slide preview."
-      );
-      return;
+    if (item) {
+      item.classList.remove("processing", "pending");
+      item.classList.add("has-content");
+      item.dataset.generationStatus = "generated";
     }
 
-    const slideContent = window.slideRenderer
-      ? window.slideRenderer.renderSlide(chunk, false)
-      : this.renderBasicSlidePreview(chunk);
-
-    const previewHTML = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Slide Preview: ${chunk.title}</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 2rem; background: #f8fafc; }
-          .preview-container { max-width: 800px; margin: 0 auto; background: white; border-radius: 0.75rem; padding: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-          .slide-title { font-size: 1.5rem; margin-bottom: 1rem; color: #1f2937; }
-        </style>
-        <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-      </head>
-      <body>
-        <div class="preview-container">
-          ${slideContent}
-        </div>
-        <script>
-          if (typeof lucide !== 'undefined') {
-            lucide.createIcons();
-          }
-        </script>
-      </body>
-      </html>
-    `;
-
-    previewWindow.document.write(previewHTML);
-    previewWindow.document.close();
-    previewWindow.focus();
+    this.updateGenerationUI();
   }
 
   /**
-   * Reset slide content
+   * Handle generation failed event
    */
-  resetSlideContent(chunkId) {
-    const confirmed = confirm(
-      "Reset slide content? This will remove all generated content for this slide."
-    );
-    if (!confirmed) return;
+  handleGenerationFailed(data) {
+    const { chunkId, error } = data;
+    this.handleGenerationError(chunkId, error);
+  }
 
-    const chunks = this.stateManager.getState("chunks") || [];
-    const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
+  /**
+   * Handle content reset event
+   */
+  handleContentReset(data) {
+    const { chunkId } = data;
+    const item = document.querySelector(`[data-chunk-id="${chunkId}"]`);
 
-    if (chunkIndex >= 0) {
-      chunks[chunkIndex].generatedContent = null;
-      chunks[chunkIndex].lastGenerated = null;
-      this.stateManager.setState("chunks", chunks);
-
-      StatusManager.showSuccess("Slide content reset");
-      this.eventSystem.emit("content:reset", { chunkId });
+    if (item) {
+      item.classList.remove("has-content", "processing");
+      item.classList.add("pending");
+      item.dataset.generationStatus = "pending";
     }
+
+    this.updateGenerationUI();
   }
 
   /**
@@ -993,6 +935,190 @@ class GenerationUIController {
       const preview = item.querySelector(".slide-preview");
       if (preview) {
         preview.appendChild(errorDiv);
+      }
+    }
+  }
+
+  /**
+   * Save inline edit
+   */
+  saveInlineEdit(element) {
+    const chunkId = element.dataset.chunkId;
+    const field = element.dataset.field;
+
+    const sessionKey = `${chunkId}-${field}`;
+
+    if (!chunkId || !field) return;
+
+    const session = this.editingSession.get(sessionKey);
+    if (!session) return;
+
+    const newValue = element.textContent || "";
+    const hasChanged = newValue !== session.originalValue;
+
+    // Remove editing class
+    element.classList.remove("editing");
+
+    if (hasChanged) {
+      // Clear any pending auto-save
+      if (this.autoSaveTimeouts[sessionKey]) {
+        clearTimeout(this.autoSaveTimeouts[sessionKey]);
+      }
+
+      // Update content immediately
+      this.updateChunkContent(chunkId, field, newValue);
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(`Saved edit: ${field} = "${newValue}"`);
+      }
+    }
+
+    // Clean up session
+    this.editingSession.delete(sessionKey);
+  }
+
+  /**
+   * Handle keydown events during inline editing
+   */
+  handleInlineEditKeydown(event, element) {
+    const chunkId = element.dataset.chunkId;
+    const field = element.dataset.field;
+
+    if (!chunkId || !field) return;
+
+    // Escape key: cancel editing
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.cancelEditing(chunkId, field, element);
+      return;
+    }
+
+    // Enter behavior for different field types
+    if (event.key === "Enter") {
+      if (
+        field.includes("title") ||
+        field.includes("header") ||
+        field === "groundTruth"
+      ) {
+        // Single-line fields: blur on Enter (except ground truth which can be multi-line)
+        if (field !== "groundTruth") {
+          event.preventDefault();
+          element.blur();
+        }
+      }
+      // Multi-line fields: allow normal Enter behavior
+    }
+  }
+
+  /**
+   * Get content from element based on its type
+   */
+  getElementContent(element) {
+    if (element.tagName === "INPUT") {
+      return element.value;
+    } else if (element.tagName === "SELECT") {
+      return element.value;
+    } else {
+      // For contenteditable elements, return text content for most fields
+      return element.textContent || "";
+    }
+  }
+
+  /**
+   * Update chunk content in state (ENHANCED FOR GROUND TRUTH)
+   */
+  updateChunkContent(chunkId, field, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
+
+    if (chunkIndex < 0) {
+      console.error(`Chunk not found: ${chunkId}`);
+      return;
+    }
+
+    const chunk = chunks[chunkIndex];
+
+    // Handle ground truth updates directly on chunk object
+    if (field === "groundTruth") {
+      chunk.groundTruth = value;
+
+      // Visual feedback for ground truth update
+      const element = document.querySelector(
+        `[data-chunk-id="${chunkId}"][data-field="groundTruth"]`
+      );
+      if (element) {
+        element.classList.add("updated");
+        setTimeout(() => element.classList.remove("updated"), 1000);
+      }
+
+      StatusManager.showSuccess("Ground truth updated");
+    } else if (chunk.generatedContent) {
+      // Handle generated content updates
+      this.setNestedValue(chunk.generatedContent, field, value);
+    } else {
+      console.warn(`No content to update for field: ${field}`);
+      return;
+    }
+
+    // Update the chunk in state
+    chunks[chunkIndex] = chunk;
+    this.stateManager.setState("chunks", chunks);
+
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log(`Updated ${field} for chunk ${chunkId}:`, value);
+    }
+
+    // Emit update event
+    this.eventSystem.emit("content:updated", {
+      chunkId,
+      field,
+      value,
+    });
+  }
+
+  /**
+   * Set nested value using dot notation (e.g., "bullets.0", "icons.1.title")
+   */
+  setNestedValue(obj, path, value) {
+    const keys = path.split(".");
+    let current = obj;
+
+    for (let i = 0; i < keys.length - 1; i++) {
+      const key = keys[i];
+
+      if (!current[key]) {
+        // Create array if next key is numeric, object otherwise
+        const nextKey = keys[i + 1];
+        current[key] = /^\d+$/.test(nextKey) ? [] : {};
+      }
+
+      current = current[key];
+    }
+
+    // Set the final value
+    current[keys[keys.length - 1]] = value;
+  }
+
+  /**
+   * Cancel inline editing
+   */
+  cancelEditing(chunkId, field, element) {
+    const sessionKey = `${chunkId}-${field}`;
+    const session = this.editingSession.get(sessionKey);
+
+    if (session) {
+      // Restore original value
+      if (element.tagName === "INPUT") {
+        element.value = session.originalValue;
+      } else {
+        element.textContent = session.originalValue;
+      }
+
+      element.classList.remove("editing");
+      this.editingSession.delete(sessionKey);
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(`Cancelled editing: ${field}`);
       }
     }
   }
@@ -1037,7 +1163,6 @@ class GenerationUIController {
    * Escape HTML for safe rendering
    */
   escapeHtml(text) {
-    if (typeof text !== "string") return "";
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
@@ -1047,23 +1172,26 @@ class GenerationUIController {
    * Cleanup resources
    */
   cleanup() {
-    // Clean up editing handlers
-    this.cleanupEditingHandlers();
+    // Clear auto-save timeouts
+    Object.values(this.autoSaveTimeouts).forEach((timeout) =>
+      clearTimeout(timeout)
+    );
+    this.autoSaveTimeouts = {};
 
-    // Clear timeouts
-    if (this.autoSaveTimeouts) {
-      Object.values(this.autoSaveTimeouts).forEach(clearTimeout);
-      this.autoSaveTimeouts = {};
-    }
+    // Clear editing sessions
+    this.editingSession.clear();
 
-    // Close any open dropdowns
-    document.querySelectorAll(".dropdown-menu").forEach((menu) => {
-      menu.classList.remove("show");
-    });
+    // Remove event listeners
+    this.eventSystem.off("content:generated", this.handleContentGenerated);
+    this.eventSystem.off(
+      "content:generation-failed",
+      this.handleGenerationFailed
+    );
+    this.eventSystem.off("content:reset", this.handleContentReset);
 
     console.log("GenerationUIController cleaned up");
   }
 }
 
 // Make available globally
-window.generationUIController = null;
+window.GenerationUIController = GenerationUIController;

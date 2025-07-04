@@ -379,23 +379,18 @@ body {
 /* Empty state */
 .empty-state {
   text-align: center;
-  padding: 3rem 1rem;
   color: #6b7280;
 }
 
 .empty-state i {
   width: 3rem;
-  height: 3rem;
-  margin-bottom: 1rem;
 }
 
 .empty-state h3 {
-  margin-bottom: 0.5rem;
   color: #374151;
 }
 
 .empty-state p {
-  margin-bottom: 1.5rem;
   color: #6b7280;
 }
 
