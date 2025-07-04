@@ -1,182 +1,207 @@
 /**
- * Course Forge MVP - Chunk UI Controller
- * Handles chunk display, interaction, and UI management
+ * Chunk UI Controller - Manages chunk display and user interactions
  */
-
 class ChunkUIController {
-  constructor(stateManager, eventSystem, chunkManager) {
+  constructor(stateManager, eventSystem) {
     this.stateManager = stateManager;
     this.eventSystem = eventSystem;
-    this.chunkManager = chunkManager;
-    this.eventHandlers = new Map();
+    this.chunkManager = null; // Will be set later
+    this.currentFilter = "all";
+    this.sortOrder = "order";
 
-    this.setupEventListeners();
+    // Auto-save system for inline editing
+    this.autoSaveTimeouts = {};
+    this.editingSession = new Map();
 
-    if (CONFIG.DEBUG.ENABLED) {
-      console.log("ChunkUIController initialized");
-    }
+    this.bindEvents();
   }
 
   /**
-   * Set up event listeners
+   * Initialize the controller
+   */
+  initialize() {
+    this.renderChunks();
+    this.setupEventListeners();
+  }
+
+  /**
+   * Set chunk manager reference
+   */
+  setChunkManager(chunkManager) {
+    this.chunkManager = chunkManager;
+  }
+
+  /**
+   * Bind event listeners
+   */
+  bindEvents() {
+    // State change listeners
+    this.stateManager.subscribe("chunks", this.renderChunks.bind(this));
+
+    // Custom event listeners
+    this.eventSystem.on("chunk:added", this.handleChunkAdded.bind(this));
+    this.eventSystem.on("chunk:removed", this.handleChunkRemoved.bind(this));
+    this.eventSystem.on("chunk:moved", this.handleChunkMoved.bind(this));
+    this.eventSystem.on(
+      "chunk:lock-toggled",
+      this.handleChunkLockToggled.bind(this)
+    );
+    this.eventSystem.on(
+      "chunk:type-changed",
+      this.handleChunkTypeChanged.bind(this)
+    );
+  }
+
+  /**
+   * Setup DOM event listeners
    */
   setupEventListeners() {
-    // React to chunks changes
-    this.stateManager.subscribe("chunks", () => {
-      this.updateChunksUI();
+    // Filter controls
+    const filterButtons = document.querySelectorAll(".chunk-filter-btn");
+    filterButtons.forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        this.setFilter(e.target.dataset.filter);
+      });
     });
 
-    // Listen for chunk-related events
-    this.eventSystem.on("chunks:generated", () => {
-      this.updateChunksUI();
-    });
-
-    this.eventSystem.on("chunk:added", () => {
-      this.updateChunksUI();
-    });
-
-    this.eventSystem.on("chunk:removed", () => {
-      this.updateChunksUI();
-    });
-
-    this.eventSystem.on("chunk:reordered", () => {
-      this.updateChunksUI();
-    });
-  }
-
-  /**
-   * Update chunks UI
-   */
-  updateChunksUI() {
-    const container = document.getElementById("chunksContainer");
-    const chunks = this.stateManager.getState("chunks") || [];
-
-    if (!container) return;
-
-    if (chunks.length === 0) {
-      this.renderEmptyState(container);
-    } else {
-      this.renderChunksList(container, chunks);
+    // Sort controls
+    const sortSelect = document.getElementById("chunkSortSelect");
+    if (sortSelect) {
+      sortSelect.addEventListener("change", (e) => {
+        this.setSortOrder(e.target.value);
+      });
     }
 
-    // Update proceed button
-    this.updateProceedButton(chunks.length);
-
-    // Reinitialize icons
-    if (typeof lucide !== "undefined") {
-      lucide.createIcons();
+    // Add chunk button
+    const addChunkBtn = document.getElementById("addChunkBtn");
+    if (addChunkBtn) {
+      addChunkBtn.addEventListener("click", () => {
+        if (this.chunkManager) {
+          this.chunkManager.addNewChunk();
+        }
+      });
     }
-  }
 
-  /**
-   * Render empty state
-   */
-  renderEmptyState(container) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <i data-lucide="layout" class="empty-icon"></i>
-        <p>No chunks generated yet. Click "Rechunk Content" to begin.</p>
-        <div class="empty-actions">
-          <button class="btn btn-primary" onclick="app.rechunkContent()">
-            <i data-lucide="sparkles"></i>
-            Generate Chunks
-          </button>
-        </div>
-      </div>
-    `;
+    // Global click handler to close dropdowns
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".chunk-actions-dropdown")) {
+        this.closeAllDropdowns();
+      }
+    });
   }
 
   /**
    * Render chunks list
    */
-  renderChunksList(container, chunks) {
-    const sortedChunks = chunks.sort((a, b) => a.order - b.order);
+  renderChunks() {
+    const container = document.getElementById("chunksContainer");
+    if (!container) return;
 
-    container.innerHTML = `
-      <div class="chunks-header">
-        <div class="chunks-stats">
-          ${this.renderChunksStats(chunks)}
+    const chunks = this.stateManager.getState("chunks") || [];
+
+    if (chunks.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i data-lucide="package"></i>
+          <h3>No chunks available</h3>
+          <p>Generate chunks from your course content or add chunks manually</p>
+          <button class="btn btn-primary" onclick="chunkUIController.addNewChunk()">
+            <i data-lucide="plus"></i> Add New Chunk
+          </button>
         </div>
-      </div>
-      <div class="chunks-container" id="chunksListContainer">
-        ${sortedChunks.map((chunk) => this.renderChunkItem(chunk)).join("")}
-      </div>
-    `;
+      `;
 
-    // Setup drag and drop for reordering
-    const chunksListContainer = document.getElementById("chunksListContainer");
-    if (chunksListContainer && this.chunkManager) {
-      this.chunkManager.setupDragAndDrop(chunksListContainer);
+      if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+      }
+      return;
+    }
+
+    // Filter and sort chunks
+    const filteredChunks = this.filterChunks(chunks);
+    const sortedChunks = this.sortChunks(filteredChunks);
+
+    // Render chunks
+    const chunksHTML = sortedChunks
+      .map((chunk) => this.renderChunkCard(chunk))
+      .join("");
+
+    container.innerHTML = chunksHTML;
+
+    // Initialize Lucide icons
+    if (typeof lucide !== "undefined") {
+      lucide.createIcons();
+    }
+
+    // Update summary
+    this.updateChunksSummary(chunks);
+  }
+
+  /**
+   * Filter chunks based on current filter
+   */
+  filterChunks(chunks) {
+    switch (this.currentFilter) {
+      case "locked":
+        return chunks.filter((chunk) => chunk.isLocked);
+      case "generated":
+        return chunks.filter((chunk) => chunk.generatedContent);
+      case "pending":
+        return chunks.filter((chunk) => !chunk.generatedContent);
+      default:
+        return chunks;
     }
   }
 
   /**
-   * Render chunks statistics
+   * Sort chunks based on current sort order
    */
-  renderChunksStats(chunks) {
-    const total = chunks.length;
-    const locked = chunks.filter((chunk) => chunk.isLocked).length;
-    const generated = chunks.filter((chunk) => chunk.generatedContent).length;
-
-    return `
-      <div class="stats-row">
-        <span class="stat-item">${total} chunks</span>
-        <span class="stat-item">${generated} generated</span>
-        <span class="stat-item">${locked} locked</span>
-      </div>
-    `;
+  sortChunks(chunks) {
+    switch (this.sortOrder) {
+      case "title":
+        return chunks.sort((a, b) => a.title.localeCompare(b.title));
+      case "type":
+        return chunks.sort((a, b) => a.slideType.localeCompare(b.slideType));
+      case "order":
+      default:
+        return chunks.sort((a, b) => a.order - b.order);
+    }
   }
 
   /**
-   * Render individual chunk item
+   * Render individual chunk card
    */
-  renderChunkItem(chunk) {
-    const slideTypeOptions = CONFIG.SLIDE_TYPES.map(
-      (type) =>
-        `<option value="${type.value}" ${
-          chunk.slideType === type.value ? "selected" : ""
-        }>${type.label}</option>`
-    ).join("");
+  renderChunkCard(chunk) {
+    const slideTypeOptions = CONFIG.SLIDE_TYPES.map((type) => {
+      const selected = type.value === chunk.slideType ? "selected" : "";
+      return `<option value="${type.value}" ${selected}>${type.label}</option>`;
+    }).join("");
+
+    const statusBadge = chunk.isLocked
+      ? '<span class="badge badge-warning">Locked</span>'
+      : chunk.generatedContent
+      ? '<span class="badge badge-success">Generated</span>'
+      : '<span class="badge badge-secondary">Pending</span>';
 
     return `
-      <div class="chunk-item ${chunk.isLocked ? "locked" : ""} ${
-      chunk.generatedContent ? "has-content" : ""
-    }" 
-           data-chunk-id="${chunk.id}" 
-           draggable="true">
+      <div class="chunk-card ${
+        chunk.isLocked ? "locked" : ""
+      }" data-chunk-id="${chunk.id}">
         <div class="chunk-header">
-          <div class="chunk-drag-handle" title="Drag to reorder">
-            <i data-lucide="grip-vertical"></i>
-          </div>
-          <div class="chunk-title-container">
+          <div class="chunk-title-section">
             <input type="text" 
                    class="chunk-title-input" 
-                   value="${this.escapeHtml(chunk.title)}" 
+                   value="${this.escapeHtml(chunk.title)}"
                    onchange="chunkUIController.updateChunkTitle('${
                      chunk.id
                    }', this.value)"
-                   onblur="chunkUIController.validateChunkTitle(this)"
-                   ${chunk.isLocked ? "readonly" : ""}>
-            <div class="chunk-meta">
-              <span class="chunk-status ${
-                chunk.generatedContent ? "generated" : "pending"
-              }">
-                ${chunk.generatedContent ? "Generated" : "Pending"}
-              </span>
-              ${
-                chunk.lastGenerated
-                  ? `<span class="chunk-updated" title="Last updated: ${new Date(
-                      chunk.lastGenerated
-                    ).toLocaleString()}">
-                <i data-lucide="clock"></i>
-              </span>`
-                  : ""
-              }
-            </div>
+                   onkeyup="chunkUIController.validateChunkTitle(this)"
+                   ${chunk.isLocked ? "disabled" : ""}>
+            ${statusBadge}
           </div>
           <div class="chunk-controls">
-            <button class="btn btn-secondary btn-sm" 
-                    onclick="chunkUIController.toggleChunkLock('${chunk.id}')" 
+            <button class="btn btn-sm btn-secondary" 
+                    onclick="chunkUIController.toggleChunkLock('${chunk.id}')"
                     title="${chunk.isLocked ? "Unlock" : "Lock"} chunk">
               <i data-lucide="${chunk.isLocked ? "lock" : "unlock"}"></i>
             </button>
@@ -227,7 +252,7 @@ class ChunkUIController {
   }
 
   /**
-   * Render chunk content preview
+   * Render chunk content preview - UPDATED WITH DIRECTLY EDITABLE GROUND TRUTH
    */
   renderChunkContent(chunk) {
     if (!chunk.sourceContent && !chunk.generatedContent && !chunk.groundTruth) {
@@ -247,22 +272,30 @@ class ChunkUIController {
     `;
     }
 
-    // NEW: Add ground truth display
-    if (chunk.groundTruth) {
-      const preview = chunk.groundTruth.substring(0, 150);
-      contentPreview += `
-      <div class="chunk-ground-truth-preview">
-        <strong>Ground Truth:</strong> ${this.escapeHtml(preview)}${
-        chunk.groundTruth.length > 150 ? "..." : ""
-      }
-        <button class="btn btn-sm btn-link edit-ground-truth-btn" 
-                onclick="chunkUIController.editGroundTruth('${chunk.id}')" 
-                title="Edit ground truth">
-          <i data-lucide="edit-3"></i>
-        </button>
+    // UPDATED: Ground truth display with direct inline editing
+    const groundTruthSection = `
+      <div class="chunk-ground-truth-section">
+        <div class="ground-truth-header">
+          <strong><i data-lucide="target"></i> Ground Truth:</strong>
+        </div>
+        <div class="ground-truth-content ${
+          chunk.groundTruth && chunk.groundTruth.trim()
+            ? "has-content"
+            : "empty"
+        }" 
+             contenteditable="true"
+             data-chunk-id="${chunk.id}"
+             data-field="groundTruth"
+             onblur="chunkUIController.saveInlineEdit(this)"
+             onkeydown="chunkUIController.handleInlineEditKeydown(event, this)"
+             onpaste="chunkUIController.handlePaste(event, this)"
+             placeholder="Describe what this slide should cover and its purpose...">
+          ${this.escapeHtml(chunk.groundTruth || "")}
+        </div>
       </div>
     `;
-    }
+
+    contentPreview += groundTruthSection;
 
     if (chunk.generatedContent) {
       const contentSummary = this.generateContentSummary(
@@ -286,22 +319,199 @@ class ChunkUIController {
   }
 
   /**
-   * Edit ground truth for a chunk
+   * UPDATED: Save inline edit for ground truth
    */
-  editGroundTruth(chunkId) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const chunk = chunks.find((c) => c.id === chunkId);
+  saveInlineEdit(element) {
+    const chunkId = element.dataset.chunkId;
+    const field = element.dataset.field;
 
-    if (!chunk) return;
+    if (!chunkId || !field) return;
 
-    const currentText = chunk.groundTruth || "";
-    const newText = prompt("Edit ground truth guidance:", currentText);
+    const sessionKey = `${chunkId}-${field}`;
+    const session = this.editingSession.get(sessionKey);
 
-    if (newText !== null && newText !== currentText) {
-      chunk.groundTruth = newText.trim();
-      this.stateManager.setState("chunks", chunks);
-      StatusManager.showSuccess("Ground truth updated");
+    if (!session) {
+      // No editing session, create one with current value
+      const currentValue = element.textContent || "";
+      this.editingSession.set(sessionKey, {
+        originalValue: currentValue,
+        startTime: Date.now(),
+      });
     }
+
+    // Clear any pending auto-save
+    if (this.autoSaveTimeouts[sessionKey]) {
+      clearTimeout(this.autoSaveTimeouts[sessionKey]);
+    }
+
+    // Get current value
+    const newValue = (element.textContent || "").trim();
+    const sessionData = this.editingSession.get(sessionKey);
+    const hasChanged = newValue !== sessionData.originalValue;
+
+    // Remove editing class
+    element.classList.remove("editing");
+
+    if (hasChanged) {
+      // Update content immediately
+      this.updateChunkContent(chunkId, field, newValue);
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(`Saved edit: ${field} = "${newValue}"`);
+      }
+    }
+
+    // Clean up session
+    this.editingSession.delete(sessionKey);
+  }
+
+  /**
+   * UPDATED: Handle keydown events during inline editing
+   */
+  handleInlineEditKeydown(event, element) {
+    const chunkId = element.dataset.chunkId;
+    const field = element.dataset.field;
+
+    if (!chunkId || !field) return;
+
+    const sessionKey = `${chunkId}-${field}`;
+
+    // Initialize editing session if not exists
+    if (!this.editingSession.has(sessionKey)) {
+      this.editingSession.set(sessionKey, {
+        originalValue: element.textContent || "",
+        startTime: Date.now(),
+      });
+      element.classList.add("editing");
+    }
+
+    // Escape key: cancel editing
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.cancelEditing(chunkId, field, element);
+      return;
+    }
+
+    // Auto-save on typing (debounced)
+    if (this.autoSaveTimeouts[sessionKey]) {
+      clearTimeout(this.autoSaveTimeouts[sessionKey]);
+    }
+
+    this.autoSaveTimeouts[sessionKey] = setTimeout(() => {
+      const newValue = (element.textContent || "").trim();
+      const session = this.editingSession.get(sessionKey);
+
+      if (session && newValue !== session.originalValue) {
+        this.updateChunkContent(chunkId, field, newValue);
+        session.originalValue = newValue; // Update original value
+
+        // Visual feedback
+        element.classList.add("auto-saved");
+        setTimeout(() => element.classList.remove("auto-saved"), 1000);
+      }
+    }, 1000); // Auto-save after 1 second of inactivity
+  }
+
+  /**
+   * Handle paste events for inline editing
+   */
+  handlePaste(event, element) {
+    event.preventDefault();
+
+    // Get plain text from clipboard
+    const paste = (event.clipboardData || window.clipboardData).getData("text");
+
+    // Insert plain text at cursor position
+    if (document.selection) {
+      // IE
+      element.focus();
+      document.selection.createRange().text = paste;
+    } else if (window.getSelection) {
+      // Other browsers
+      const selection = window.getSelection();
+      if (selection.rangeCount) {
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(document.createTextNode(paste));
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+  }
+
+  /**
+   * Cancel inline editing
+   */
+  cancelEditing(chunkId, field, element) {
+    const sessionKey = `${chunkId}-${field}`;
+    const session = this.editingSession.get(sessionKey);
+
+    if (session) {
+      // Restore original value
+      element.textContent = session.originalValue;
+      element.classList.remove("editing");
+      this.editingSession.delete(sessionKey);
+
+      // Clear auto-save timeout
+      if (this.autoSaveTimeouts[sessionKey]) {
+        clearTimeout(this.autoSaveTimeouts[sessionKey]);
+        delete this.autoSaveTimeouts[sessionKey];
+      }
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(`Cancelled editing: ${field}`);
+      }
+    }
+  }
+
+  /**
+   * Update chunk content in state
+   */
+  updateChunkContent(chunkId, field, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
+
+    if (chunkIndex < 0) {
+      console.error(`Chunk not found: ${chunkId}`);
+      return;
+    }
+
+    const chunk = chunks[chunkIndex];
+
+    // Handle ground truth updates directly on chunk object
+    if (field === "groundTruth") {
+      chunk.groundTruth = value;
+
+      // Update the chunk in state
+      chunks[chunkIndex] = chunk;
+      this.stateManager.setState("chunks", chunks);
+
+      // Visual feedback
+      const element = document.querySelector(
+        `[data-chunk-id="${chunkId}"][data-field="groundTruth"]`
+      );
+      if (element) {
+        element.classList.add("updated");
+        setTimeout(() => element.classList.remove("updated"), 1000);
+      }
+
+      StatusManager.showSuccess("Ground truth updated");
+    } else {
+      console.warn(`Unsupported field for chunk content update: ${field}`);
+      return;
+    }
+
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log(`Updated ${field} for chunk ${chunkId}:`, value);
+    }
+
+    // Emit update event
+    this.eventSystem.emit("chunk:content-updated", {
+      chunkId,
+      field,
+      value,
+    });
   }
 
   /**
@@ -337,6 +547,51 @@ class ChunkUIController {
         return `${popupCount} popup items`;
       default:
         return "Generated content";
+    }
+  }
+
+  /**
+   * Add new chunk
+   */
+  addNewChunk() {
+    if (this.chunkManager) {
+      this.chunkManager.addNewChunk();
+    }
+  }
+
+  /**
+   * Remove a chunk
+   */
+  removeChunk(chunkId) {
+    if (this.chunkManager) {
+      this.chunkManager.removeChunk(chunkId);
+    }
+  }
+
+  /**
+   * Duplicate a chunk
+   */
+  duplicateChunk(chunkId) {
+    if (this.chunkManager) {
+      this.chunkManager.duplicateChunk(chunkId);
+    }
+  }
+
+  /**
+   * Move chunk up
+   */
+  moveChunkUp(chunkId) {
+    if (this.chunkManager) {
+      this.chunkManager.moveChunkUp(chunkId);
+    }
+  }
+
+  /**
+   * Move chunk down
+   */
+  moveChunkDown(chunkId) {
+    if (this.chunkManager) {
+      this.chunkManager.moveChunkDown(chunkId);
     }
   }
 
@@ -400,134 +655,10 @@ class ChunkUIController {
       );
       if (chunkElement) {
         chunkElement.scrollIntoView({ behavior: "smooth", block: "center" });
-        chunkElement.classList.add("highlighted");
-        setTimeout(() => chunkElement.classList.remove("highlighted"), 2000);
+        chunkElement.classList.add("highlight");
+        setTimeout(() => chunkElement.classList.remove("highlight"), 2000);
       }
-    }, 300);
-  }
-
-  /**
-   * Remove a chunk
-   */
-  removeChunk(chunkId) {
-    if (!this.chunkManager) return;
-    this.chunkManager.removeChunk(chunkId);
-  }
-
-  /**
-   * Duplicate a chunk
-   */
-  duplicateChunk(chunkId) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const chunk = chunks.find((c) => c.id === chunkId);
-
-    if (!chunk) return;
-
-    const duplicatedChunk = {
-      ...chunk,
-      id: `chunk-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: `${chunk.title} (Copy)`,
-      order: chunks.length,
-      isLocked: false,
-      generatedContent: null, // Don't copy generated content
-      createdAt: new Date().toISOString(),
-    };
-
-    chunks.push(duplicatedChunk);
-    this.stateManager.setState("chunks", chunks);
-
-    StatusManager.showSuccess("Chunk duplicated");
-    this.eventSystem.emit("chunk:duplicated", {
-      originalId: chunkId,
-      newId: duplicatedChunk.id,
-    });
-  }
-
-  /**
-   * Move chunk up in order
-   */
-  moveChunkUp(chunkId) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const currentIndex = chunks.findIndex((c) => c.id === chunkId);
-
-    if (currentIndex > 0) {
-      this.swapChunks(chunks, currentIndex, currentIndex - 1);
-    }
-  }
-
-  /**
-   * Move chunk down in order
-   */
-  moveChunkDown(chunkId) {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const currentIndex = chunks.findIndex((c) => c.id === chunkId);
-
-    if (currentIndex < chunks.length - 1) {
-      this.swapChunks(chunks, currentIndex, currentIndex + 1);
-    }
-  }
-
-  /**
-   * Swap two chunks
-   */
-  swapChunks(chunks, index1, index2) {
-    // Swap order values
-    const temp = chunks[index1].order;
-    chunks[index1].order = chunks[index2].order;
-    chunks[index2].order = temp;
-
-    // Sort by order
-    chunks.sort((a, b) => a.order - b.order);
-
-    this.stateManager.setState("chunks", chunks);
-    StatusManager.showInfo("Chunk moved");
-  }
-
-  /**
-   * Toggle chunk selection
-   */
-  toggleChunkSelection(chunkId, isSelected) {
-    // Implementation for bulk operations
-    const checkbox = document.querySelector(
-      `input[data-chunk-id="${chunkId}"]`
-    );
-    if (checkbox) {
-      checkbox.checked = isSelected;
-    }
-
-    this.updateBulkActions();
-  }
-
-  /**
-   * Select all chunks
-   */
-  selectAllChunks() {
-    const checkboxes = document.querySelectorAll(".chunk-checkbox");
-    const allSelected = Array.from(checkboxes).every((cb) => cb.checked);
-
-    checkboxes.forEach((checkbox) => {
-      checkbox.checked = !allSelected;
-    });
-
-    this.updateBulkActions();
-  }
-
-  /**
-   * Update bulk actions UI
-   */
-  updateBulkActions() {
-    const selectedCount = document.querySelectorAll(
-      ".chunk-checkbox:checked"
-    ).length;
-
-    // Show/hide bulk actions based on selection
-    const bulkActions = document.querySelector(".bulk-actions");
-    if (bulkActions) {
-      bulkActions.style.display = selectedCount > 0 ? "flex" : "none";
-      bulkActions.querySelector(
-        ".selected-count"
-      ).textContent = `${selectedCount} selected`;
-    }
+    }, 100);
   }
 
   /**
@@ -535,150 +666,142 @@ class ChunkUIController {
    */
   toggleChunkActions(chunkId, button) {
     const dropdown = document.getElementById(`actions-${chunkId}`);
-    if (!dropdown) return;
+    const isOpen = dropdown.classList.contains("show");
 
-    // Close other dropdowns
-    document.querySelectorAll(".dropdown-menu").forEach((menu) => {
-      if (menu !== dropdown) {
-        menu.classList.remove("show");
-      }
-    });
+    // Close all dropdowns first
+    this.closeAllDropdowns();
 
-    dropdown.classList.toggle("show");
-
-    // Close dropdown when clicking outside
-    const closeHandler = (e) => {
-      if (!button.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.classList.remove("show");
-        document.removeEventListener("click", closeHandler);
-      }
-    };
-
-    if (dropdown.classList.contains("show")) {
-      setTimeout(() => {
-        document.addEventListener("click", closeHandler);
-      }, 0);
+    // Toggle this dropdown
+    if (!isOpen) {
+      dropdown.classList.add("show");
+      button.setAttribute("aria-expanded", "true");
     }
   }
 
   /**
-   * Toggle preview expanded state
+   * Close all action dropdowns
    */
-  togglePreviewExpanded(chunkId) {
-    const preview = document.querySelector(
-      `[data-chunk-id="${chunkId}"] .chunk-content-preview`
-    );
-    if (!preview) return;
+  closeAllDropdowns() {
+    const dropdowns = document.querySelectorAll(".dropdown-menu");
+    const buttons = document.querySelectorAll(".dropdown-toggle");
 
-    const isExpanded = preview.classList.contains("expanded");
-    preview.classList.toggle("expanded");
+    dropdowns.forEach((dropdown) => {
+      dropdown.classList.remove("show");
+    });
 
-    const button = preview.querySelector(".expand-text");
-    const icon = preview.querySelector("i");
+    buttons.forEach((button) => {
+      button.setAttribute("aria-expanded", "false");
+    });
+  }
 
-    if (button && icon) {
-      button.textContent = isExpanded ? "Show more" : "Show less";
-      icon.setAttribute(
-        "data-lucide",
-        isExpanded ? "chevron-down" : "chevron-up"
+  /**
+   * Set filter
+   */
+  setFilter(filter) {
+    this.currentFilter = filter;
+
+    // Update filter buttons
+    const buttons = document.querySelectorAll(".chunk-filter-btn");
+    buttons.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.filter === filter);
+    });
+
+    this.renderChunks();
+  }
+
+  /**
+   * Set sort order
+   */
+  setSortOrder(order) {
+    this.sortOrder = order;
+    this.renderChunks();
+  }
+
+  /**
+   * Update chunks summary
+   */
+  updateChunksSummary(chunks) {
+    const summaryElement = document.getElementById("chunksSummary");
+    if (!summaryElement) return;
+
+    const total = chunks.length;
+    const locked = chunks.filter((c) => c.isLocked).length;
+    const generated = chunks.filter((c) => c.generatedContent).length;
+    const withGroundTruth = chunks.filter(
+      (c) => c.groundTruth && c.groundTruth.trim()
+    ).length;
+
+    summaryElement.innerHTML = `
+      <div class="summary-item">
+        <span class="summary-label">Total:</span>
+        <span class="summary-value">${total}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Generated:</span>
+        <span class="summary-value">${generated}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Locked:</span>
+        <span class="summary-value">${locked}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">With Ground Truth:</span>
+        <span class="summary-value">${withGroundTruth}</span>
+      </div>
+    `;
+  }
+
+  /**
+   * Handle chunk added event
+   */
+  handleChunkAdded(data) {
+    this.renderChunks();
+
+    // Scroll to the new chunk
+    setTimeout(() => {
+      const newChunkElement = document.querySelector(
+        `[data-chunk-id="${data.chunk.id}"]`
       );
-
-      // Re-initialize icon
-      if (typeof lucide !== "undefined") {
-        lucide.createIcons();
+      if (newChunkElement) {
+        newChunkElement.scrollIntoView({ behavior: "smooth", block: "center" });
+        newChunkElement.classList.add("highlight");
+        setTimeout(() => newChunkElement.classList.remove("highlight"), 2000);
       }
-    }
+    }, 100);
   }
 
   /**
-   * Export chunks to JSON
+   * Handle chunk removed event
    */
-  exportChunks() {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const exportData = {
-      version: "1.0",
-      exportedAt: new Date().toISOString(),
-      chunks: chunks,
-      stats: {
-        total: chunks.length,
-        locked: chunks.filter((c) => c.isLocked).length,
-        generated: chunks.filter((c) => c.generatedContent).length,
-      },
-    };
-
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const filename = `chunks-${timestamp}.json`;
-
-    FileProcessor.downloadAsFile(jsonString, filename, "application/json");
-    StatusManager.showSuccess("Chunks exported");
+  handleChunkRemoved(data) {
+    this.renderChunks();
   }
 
   /**
-   * Update proceed button state
+   * Handle chunk moved event
    */
-  updateProceedButton(chunkCount) {
-    const proceedBtn = document.getElementById("proceedToGenerationBtn");
-    if (proceedBtn) {
-      proceedBtn.disabled = chunkCount === 0;
-    }
+  handleChunkMoved(data) {
+    this.renderChunks();
   }
 
   /**
-   * Get selected chunks
+   * Handle chunk lock toggled event
    */
-  getSelectedChunks() {
-    const selectedIds = Array.from(
-      document.querySelectorAll(".chunk-checkbox:checked")
-    ).map((cb) => cb.dataset.chunkId);
-
-    const chunks = this.stateManager.getState("chunks") || [];
-    return chunks.filter((chunk) => selectedIds.includes(chunk.id));
+  handleChunkLockToggled(data) {
+    this.renderChunks();
   }
 
   /**
-   * Bulk operations
+   * Handle chunk type changed event
    */
-  bulkLockChunks() {
-    const selected = this.getSelectedChunks();
-    selected.forEach((chunk) => {
-      if (!chunk.isLocked) {
-        this.chunkManager.toggleChunkLock(chunk.id);
-      }
-    });
-    StatusManager.showSuccess(`Locked ${selected.length} chunks`);
-  }
-
-  bulkUnlockChunks() {
-    const selected = this.getSelectedChunks();
-    selected.forEach((chunk) => {
-      if (chunk.isLocked) {
-        this.chunkManager.toggleChunkLock(chunk.id);
-      }
-    });
-    StatusManager.showSuccess(`Unlocked ${selected.length} chunks`);
-  }
-
-  bulkDeleteChunks() {
-    const selected = this.getSelectedChunks();
-    if (selected.length === 0) return;
-
-    const confirmed = confirm(
-      `Delete ${selected.length} selected chunks? This cannot be undone.`
-    );
-    if (confirmed) {
-      selected.forEach((chunk) => {
-        this.chunkManager.removeChunk(chunk.id);
-      });
-      StatusManager.showSuccess(`Deleted ${selected.length} chunks`);
-    }
+  handleChunkTypeChanged(data) {
+    this.renderChunks();
   }
 
   /**
    * Escape HTML for safe rendering
    */
   escapeHtml(text) {
-    if (typeof text !== "string") return "";
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
@@ -688,17 +811,25 @@ class ChunkUIController {
    * Cleanup resources
    */
   cleanup() {
-    // Remove event handlers
-    this.eventHandlers.forEach(({ element, event, handler }) => {
-      element.removeEventListener(event, handler);
-    });
-    this.eventHandlers.clear();
+    // Clear auto-save timeouts
+    Object.values(this.autoSaveTimeouts).forEach((timeout) =>
+      clearTimeout(timeout)
+    );
+    this.autoSaveTimeouts = {};
 
-    // Close any open dropdowns
-    document.querySelectorAll(".dropdown-menu").forEach((menu) => {
-      menu.classList.remove("show");
-    });
+    // Clear editing sessions
+    this.editingSession.clear();
+
+    // Remove event listeners
+    this.eventSystem.off("chunk:added", this.handleChunkAdded);
+    this.eventSystem.off("chunk:removed", this.handleChunkRemoved);
+    this.eventSystem.off("chunk:moved", this.handleChunkMoved);
+    this.eventSystem.off("chunk:lock-toggled", this.handleChunkLockToggled);
+    this.eventSystem.off("chunk:type-changed", this.handleChunkTypeChanged);
 
     console.log("ChunkUIController cleaned up");
   }
 }
+
+// Make available globally
+window.ChunkUIController = ChunkUIController;

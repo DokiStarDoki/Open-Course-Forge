@@ -1,87 +1,58 @@
 /**
- * Course Forge MVP - Chunk Management
- * Handles chunk creation, editing, and organization
+ * Chunk Manager - Handles chunk operations and state management
  */
-
 class ChunkManager {
-  constructor(stateManager, eventSystem, llmService) {
+  constructor(stateManager, eventSystem) {
     this.stateManager = stateManager;
     this.eventSystem = eventSystem;
-    this.llmService = llmService;
-
     this.isProcessing = false;
-    this.draggedChunk = null;
 
-    this.setupEventListeners();
+    // Initialize LLM service
+    this.llmService = new LLMService();
 
-    if (CONFIG.DEBUG.ENABLED) {
-      console.log("ChunkManager initialized");
-    }
+    // Subscribe to events
+    this.eventSystem.on("chunks:generate", this.generateChunks.bind(this));
+    this.eventSystem.on("chunks:regenerate", this.regenerateChunks.bind(this));
   }
 
   /**
-   * Set up event listeners
+   * Generate chunks from course content
    */
-  setupEventListeners() {
-    // Listen for chunk-related events
-    this.eventSystem.on("chunk:generate", (data) => {
-      this.generateChunks(data.courseConfig);
-    });
-
-    this.eventSystem.on("chunk:add", () => {
-      this.addNewChunk();
-    });
-
-    this.eventSystem.on("chunk:remove", (data) => {
-      this.removeChunk(data.chunkId);
-    });
-
-    this.eventSystem.on("chunk:lock", (data) => {
-      this.toggleChunkLock(data.chunkId);
-    });
-
-    this.eventSystem.on("chunk:type-change", (data) => {
-      this.changeChunkType(data.chunkId, data.newType);
-    });
-
-    this.eventSystem.on("chunk:reorder", (data) => {
-      this.reorderChunks(data.oldIndex, data.newIndex);
-    });
-  }
-
-  /**
-   * Generate chunks using AI
-   */
-  async generateChunks(courseConfig) {
-    if (this.isProcessing) {
-      StatusManager.showWarning("Chunking is already in progress");
+  async generateChunks(force = false) {
+    if (this.isProcessing && !force) {
+      StatusManager.showWarning("Chunk generation already in progress");
       return;
     }
 
     try {
       this.isProcessing = true;
-      this.stateManager.setProcessingStatus(
-        true,
-        "Analyzing content and generating chunks..."
-      );
+      this.stateManager.setProcessingStatus(true);
 
-      StatusManager.showLoading("Analyzing your content with AI...");
-
-      // Validate course config
-      if (!this.validateCourseConfig(courseConfig)) {
-        throw new Error("Invalid course configuration");
+      // Get course configuration
+      const courseConfig = this.stateManager.getState("courseConfig");
+      if (!courseConfig) {
+        throw new Error("Course configuration not found");
       }
+
+      // Validate configuration
+      this.validateCourseConfig(courseConfig);
+
+      // Get existing chunks and identify locked ones
+      const existingChunks = this.stateManager.getState("chunks") || [];
+      const lockedChunks = existingChunks.filter((chunk) => chunk.isLocked);
+
+      StatusManager.showInfo("Generating course chunks...");
 
       // Generate chunks using LLM
       const generatedChunks = await this.llmService.generateChunks(
         courseConfig
       );
 
-      // Get existing chunks and preserve locked ones
-      const existingChunks = this.stateManager.getState("chunks") || [];
-      const lockedChunks = existingChunks.filter((chunk) => chunk.isLocked);
+      if (!generatedChunks || generatedChunks.length === 0) {
+        throw new Error("No chunks were generated");
+      }
 
-      // Merge locked chunks with new chunks
+      // Merge with locked chunks
       const finalChunks = this.mergeChunks(lockedChunks, generatedChunks);
 
       // Update state
@@ -89,9 +60,8 @@ class ChunkManager {
 
       // Emit success event
       this.eventSystem.emit("chunks:generated", {
+        chunks: finalChunks,
         count: finalChunks.length,
-        newCount: generatedChunks.length,
-        lockedCount: lockedChunks.length,
       });
 
       StatusManager.showSuccess(
@@ -112,6 +82,25 @@ class ChunkManager {
       this.isProcessing = false;
       this.stateManager.setProcessingStatus(false);
     }
+  }
+
+  /**
+   * Regenerate all chunks
+   */
+  async regenerateChunks() {
+    const existingChunks = this.stateManager.getState("chunks") || [];
+    const hasContent = existingChunks.some(
+      (chunk) => chunk.generatedContent || chunk.isLocked
+    );
+
+    if (hasContent) {
+      const confirmed = confirm(
+        "This will regenerate all chunks and may lose existing content. Locked chunks will be preserved. Continue?"
+      );
+      if (!confirmed) return;
+    }
+
+    await this.generateChunks(true);
   }
 
   /**
@@ -201,7 +190,7 @@ class ChunkManager {
   }
 
   /**
-   * Add a new chunk manually
+   * Add a new chunk manually - FIXED TO INCLUDE GROUND TRUTH
    */
   addNewChunk() {
     const chunks = this.stateManager.getState("chunks") || [];
@@ -210,6 +199,7 @@ class ChunkManager {
       title: `New Chunk ${chunks.length + 1}`,
       slideType: "textAndImage",
       sourceContent: "Manually created chunk - add your content here",
+      groundTruth: "", // FIXED: Added ground truth field
       estimatedTime: "2 minutes",
       order: chunks.length,
       isLocked: false,
@@ -258,142 +248,78 @@ class ChunkManager {
       }
     }
 
-    // Remove chunk
+    // Remove the chunk
     chunks.splice(chunkIndex, 1);
 
-    // Reorder remaining chunks
+    // Update order for remaining chunks
     chunks.forEach((chunk, index) => {
       chunk.order = index;
     });
 
     this.stateManager.setState("chunks", chunks);
 
-    this.eventSystem.emit("chunk:removed", { chunkId, removedChunk: chunk });
+    this.eventSystem.emit("chunk:removed", {
+      chunkId: targetId,
+      remainingCount: chunks.length,
+    });
+
     StatusManager.showSuccess("Chunk removed");
   }
 
   /**
-   * Toggle chunk lock status
+   * Duplicate a chunk
    */
-  toggleChunkLock(chunkId) {
+  duplicateChunk(chunkId) {
     const chunks = this.stateManager.getState("chunks") || [];
-
-    // Convert chunkId to string to handle both string and number IDs
     const targetId = String(chunkId);
-    const chunkIndex = chunks.findIndex(
-      (chunk) => String(chunk.id) === targetId
-    );
+    const originalChunk = chunks.find((chunk) => String(chunk.id) === targetId);
 
-    if (chunkIndex < 0) {
-      console.error("Chunk not found:", {
-        chunkId,
-        targetId,
-        availableIds: chunks.map((c) => c.id),
-      });
+    if (!originalChunk) {
       StatusManager.showError("Chunk not found");
       return;
     }
 
-    chunks[chunkIndex].isLocked = !chunks[chunkIndex].isLocked;
+    // Create duplicate
+    const duplicatedChunk = {
+      ...originalChunk,
+      id: `chunk_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      title: `${originalChunk.title} (Copy)`,
+      order: chunks.length,
+      isLocked: false, // Duplicated chunks are not locked by default
+      generatedContent: null, // Don't copy generated content
+    };
+
+    chunks.push(duplicatedChunk);
     this.stateManager.setState("chunks", chunks);
 
-    const status = chunks[chunkIndex].isLocked ? "locked" : "unlocked";
-    this.eventSystem.emit("chunk:lock-toggled", {
-      chunkId,
-      isLocked: chunks[chunkIndex].isLocked,
+    this.eventSystem.emit("chunk:duplicated", {
+      originalId: targetId,
+      duplicatedChunk,
     });
 
-    StatusManager.showInfo(`Chunk ${status}`);
+    StatusManager.showSuccess("Chunk duplicated");
   }
 
   /**
-   * Change chunk type
+   * Move chunk up in order
    */
-  changeChunkType(chunkId, newType) {
+  moveChunkUp(chunkId) {
     const chunks = this.stateManager.getState("chunks") || [];
-
-    // Convert chunkId to string to handle both string and number IDs
     const targetId = String(chunkId);
-    const chunkIndex = chunks.findIndex(
+    const currentIndex = chunks.findIndex(
       (chunk) => String(chunk.id) === targetId
     );
 
-    if (chunkIndex < 0) {
-      console.error("Chunk not found:", {
-        chunkId,
-        targetId,
-        availableIds: chunks.map((c) => c.id),
-      });
-      StatusManager.showError("Chunk not found");
+    if (currentIndex <= 0) {
+      StatusManager.showWarning("Chunk is already at the top");
       return;
     }
 
-    const oldType = chunks[chunkIndex].slideType;
-    chunks[chunkIndex].slideType = newType;
-
-    // Clear generated content if type changed
-    if (oldType !== newType) {
-      chunks[chunkIndex].generatedContent = null;
-    }
-
-    this.stateManager.setState("chunks", chunks);
-
-    this.eventSystem.emit("chunk:type-changed", {
-      chunkId,
-      oldType,
-      newType,
-    });
-
-    StatusManager.showInfo(
-      `Chunk type changed to ${this.getSlideTypeLabel(newType)}`
-    );
-  }
-
-  /**
-   * Update chunk title
-   */
-  updateChunkTitle(chunkId, newTitle) {
-    const chunks = this.stateManager.getState("chunks") || [];
-
-    // Convert chunkId to string to handle both string and number IDs
-    const targetId = String(chunkId);
-    const chunkIndex = chunks.findIndex(
-      (chunk) => String(chunk.id) === targetId
-    );
-
-    if (chunkIndex < 0) {
-      console.error("Chunk not found for title update:", {
-        chunkId,
-        targetId,
-        availableIds: chunks.map((c) => c.id),
-      });
-      return;
-    }
-
-    chunks[chunkIndex].title = newTitle;
-    this.stateManager.setState("chunks", chunks);
-
-    this.eventSystem.emit("chunk:title-updated", { chunkId, newTitle });
-  }
-
-  /**
-   * Reorder chunks
-   */
-  reorderChunks(oldIndex, newIndex) {
-    const chunks = this.stateManager.getState("chunks") || [];
-
-    if (
-      oldIndex < 0 ||
-      oldIndex >= chunks.length ||
-      newIndex < 0 ||
-      newIndex >= chunks.length
-    ) {
-      return;
-    }
-
-    // Move chunk from old position to new position
-    const movedChunk = chunks.splice(oldIndex, 1)[0];
-    chunks.splice(newIndex, 0, movedChunk);
+    // Swap with previous chunk
+    [chunks[currentIndex], chunks[currentIndex - 1]] = [
+      chunks[currentIndex - 1],
+      chunks[currentIndex],
+    ];
 
     // Update order values
     chunks.forEach((chunk, index) => {
@@ -402,190 +328,216 @@ class ChunkManager {
 
     this.stateManager.setState("chunks", chunks);
 
-    this.eventSystem.emit("chunks:reordered", { oldIndex, newIndex });
-    StatusManager.showInfo("Chunks reordered");
+    this.eventSystem.emit("chunk:moved", {
+      chunkId: targetId,
+      direction: "up",
+    });
   }
 
   /**
-   * Get slide type label
+   * Move chunk down in order
    */
-  getSlideTypeLabel(slideType) {
-    const slideTypeMap = new Map(
-      CONFIG.SLIDE_TYPES.map((type) => [type.value, type.label])
+  moveChunkDown(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const targetId = String(chunkId);
+    const currentIndex = chunks.findIndex(
+      (chunk) => String(chunk.id) === targetId
     );
-    return slideTypeMap.get(slideType) || slideType;
-  }
 
-  /**
-   * Setup drag and drop for chunk reordering
-   */
-  setupDragAndDrop(container) {
-    if (!container) return;
+    if (currentIndex < 0 || currentIndex >= chunks.length - 1) {
+      StatusManager.showWarning("Chunk is already at the bottom");
+      return;
+    }
 
-    container.addEventListener("dragstart", (e) => {
-      if (e.target.classList.contains("chunk-item")) {
-        this.draggedChunk = e.target;
-        e.target.classList.add("dragging");
-        e.dataTransfer.effectAllowed = "move";
-      }
+    // Swap with next chunk
+    [chunks[currentIndex], chunks[currentIndex + 1]] = [
+      chunks[currentIndex + 1],
+      chunks[currentIndex],
+    ];
+
+    // Update order values
+    chunks.forEach((chunk, index) => {
+      chunk.order = index;
     });
 
-    container.addEventListener("dragend", (e) => {
-      if (e.target.classList.contains("chunk-item")) {
-        e.target.classList.remove("dragging");
-        this.draggedChunk = null;
-      }
-    });
+    this.stateManager.setState("chunks", chunks);
 
-    container.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      const draggedOver = e.target.closest(".chunk-item");
-      if (draggedOver && draggedOver !== this.draggedChunk) {
-        draggedOver.classList.add("drag-over");
-      }
-    });
-
-    container.addEventListener("dragleave", (e) => {
-      const draggedOver = e.target.closest(".chunk-item");
-      if (draggedOver) {
-        draggedOver.classList.remove("drag-over");
-      }
-    });
-
-    container.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const draggedOver = e.target.closest(".chunk-item");
-
-      if (draggedOver && draggedOver !== this.draggedChunk) {
-        const chunks = Array.from(container.querySelectorAll(".chunk-item"));
-        const oldIndex = chunks.indexOf(this.draggedChunk);
-        const newIndex = chunks.indexOf(draggedOver);
-
-        this.reorderChunks(oldIndex, newIndex);
-      }
-
-      // Clean up drag classes
-      container.querySelectorAll(".chunk-item").forEach((item) => {
-        item.classList.remove("drag-over");
-      });
+    this.eventSystem.emit("chunk:moved", {
+      chunkId: targetId,
+      direction: "down",
     });
   }
 
   /**
-   * Get chunk statistics
+   * Toggle chunk lock status
    */
-  getChunkStats() {
+  toggleChunkLock(chunkId) {
     const chunks = this.stateManager.getState("chunks") || [];
+    const targetId = String(chunkId);
+    const chunk = chunks.find((chunk) => String(chunk.id) === targetId);
 
-    const stats = {
+    if (!chunk) {
+      StatusManager.showError("Chunk not found");
+      return;
+    }
+
+    chunk.isLocked = !chunk.isLocked;
+    this.stateManager.setState("chunks", chunks);
+
+    this.eventSystem.emit("chunk:lock-toggled", {
+      chunkId: targetId,
+      isLocked: chunk.isLocked,
+    });
+
+    StatusManager.showSuccess(
+      chunk.isLocked ? "Chunk locked" : "Chunk unlocked"
+    );
+  }
+
+  /**
+   * Change chunk slide type
+   */
+  changeChunkType(chunkId, newType) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const targetId = String(chunkId);
+    const chunk = chunks.find((chunk) => String(chunk.id) === targetId);
+
+    if (!chunk) {
+      StatusManager.showError("Chunk not found");
+      return;
+    }
+
+    if (chunk.isLocked) {
+      StatusManager.showWarning("Cannot change type of locked chunk");
+      return;
+    }
+
+    const oldType = chunk.slideType;
+    chunk.slideType = newType;
+
+    // Clear generated content when changing type
+    if (chunk.generatedContent) {
+      chunk.generatedContent = null;
+      StatusManager.showInfo(
+        "Generated content cleared due to slide type change"
+      );
+    }
+
+    this.stateManager.setState("chunks", chunks);
+
+    this.eventSystem.emit("chunk:type-changed", {
+      chunkId: targetId,
+      oldType,
+      newType,
+    });
+  }
+
+  /**
+   * Update chunk title
+   */
+  updateChunkTitle(chunkId, newTitle) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const targetId = String(chunkId);
+    const chunk = chunks.find((chunk) => String(chunk.id) === targetId);
+
+    if (!chunk) {
+      StatusManager.showError("Chunk not found");
+      return;
+    }
+
+    chunk.title = newTitle.trim();
+    this.stateManager.setState("chunks", chunks);
+
+    this.eventSystem.emit("chunk:title-updated", {
+      chunkId: targetId,
+      title: newTitle,
+    });
+  }
+
+  /**
+   * Update chunk source content
+   */
+  updateChunkSourceContent(chunkId, newContent) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const targetId = String(chunkId);
+    const chunk = chunks.find((chunk) => String(chunk.id) === targetId);
+
+    if (!chunk) {
+      StatusManager.showError("Chunk not found");
+      return;
+    }
+
+    chunk.sourceContent = newContent.trim();
+    this.stateManager.setState("chunks", chunks);
+
+    this.eventSystem.emit("chunk:source-updated", {
+      chunkId: targetId,
+      sourceContent: newContent,
+    });
+  }
+
+  /**
+   * Update chunk ground truth
+   */
+  updateChunkGroundTruth(chunkId, newGroundTruth) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const targetId = String(chunkId);
+    const chunk = chunks.find((chunk) => String(chunk.id) === targetId);
+
+    if (!chunk) {
+      StatusManager.showError("Chunk not found");
+      return;
+    }
+
+    chunk.groundTruth = newGroundTruth.trim();
+    this.stateManager.setState("chunks", chunks);
+
+    this.eventSystem.emit("chunk:ground-truth-updated", {
+      chunkId: targetId,
+      groundTruth: newGroundTruth,
+    });
+  }
+
+  /**
+   * Get chunk by ID
+   */
+  getChunk(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const targetId = String(chunkId);
+    return chunks.find((chunk) => String(chunk.id) === targetId);
+  }
+
+  /**
+   * Get all chunks
+   */
+  getAllChunks() {
+    return this.stateManager.getState("chunks") || [];
+  }
+
+  /**
+   * Get chunks summary
+   */
+  getChunksSummary() {
+    const chunks = this.getAllChunks();
+    const summary = {
       total: chunks.length,
-      locked: chunks.filter((chunk) => chunk.isLocked).length,
-      generated: chunks.filter((chunk) => chunk.generatedContent).length,
-      byType: {},
+      locked: chunks.filter((c) => c.isLocked).length,
+      generated: chunks.filter((c) => c.generatedContent).length,
+      withGroundTruth: chunks.filter(
+        (c) => c.groundTruth && c.groundTruth.trim()
+      ).length,
     };
 
-    // Count by slide type
-    chunks.forEach((chunk) => {
-      stats.byType[chunk.slideType] = (stats.byType[chunk.slideType] || 0) + 1;
-    });
-
-    return stats;
+    return summary;
   }
 
   /**
-   * Export chunks for debugging
+   * Cleanup resources
    */
-  exportChunks() {
-    const chunks = this.stateManager.getState("chunks") || [];
-    const exportData = {
-      timestamp: new Date().toISOString(),
-      chunks: chunks,
-      stats: this.getChunkStats(),
-    };
-
-    const dataStr = JSON.stringify(exportData, null, 2);
-    const dataBlob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(dataBlob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `chunks-${Date.now()}.json`;
-    link.click();
-
-    URL.revokeObjectURL(url);
-    StatusManager.showSuccess("Chunks exported");
-  }
-
-  /**
-   * Import chunks from file
-   */
-  async importChunks(file) {
-    try {
-      const text = await file.text();
-      const importData = JSON.parse(text);
-
-      if (!importData.chunks || !Array.isArray(importData.chunks)) {
-        throw new Error("Invalid chunks file format");
-      }
-
-      // Validate chunks
-      const validChunks = importData.chunks.filter(
-        (chunk) => chunk.id && chunk.title && chunk.slideType
-      );
-
-      if (validChunks.length === 0) {
-        throw new Error("No valid chunks found in file");
-      }
-
-      // Confirm import
-      const confirmed = confirm(
-        `Import ${validChunks.length} chunks? This will replace your current chunks.`
-      );
-
-      if (!confirmed) return;
-
-      // Update state
-      this.stateManager.setState("chunks", validChunks);
-
-      StatusManager.showSuccess(`Imported ${validChunks.length} chunks`);
-    } catch (error) {
-      console.error("Chunk import failed:", error);
-      StatusManager.showError(`Import failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Validate chunk data
-   */
-  validateChunk(chunk) {
-    const errors = [];
-
-    if (!chunk.title || chunk.title.trim().length < 3) {
-      errors.push("Title must be at least 3 characters");
-    }
-
-    if (
-      !chunk.slideType ||
-      !CONFIG.SLIDE_TYPES.some((type) => type.value === chunk.slideType)
-    ) {
-      errors.push("Invalid slide type");
-    }
-
-    if (typeof chunk.order !== "number") {
-      errors.push("Order must be a number");
-    }
-
-    return errors;
-  }
-
-  /**
-   * Get processing status
-   */
-  getProcessingStatus() {
-    return {
-      isProcessing: this.isProcessing,
-      canGenerate: !this.isProcessing && this.llmService.isReady,
-    };
+  cleanup() {
+    this.eventSystem.off("chunks:generate", this.generateChunks);
+    this.eventSystem.off("chunks:regenerate", this.regenerateChunks);
+    this.isProcessing = false;
   }
 }
 
