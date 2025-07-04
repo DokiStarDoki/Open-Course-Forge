@@ -97,16 +97,6 @@ class ChunkUIController {
         <div class="chunks-stats">
           ${this.renderChunksStats(chunks)}
         </div>
-        <div class="chunks-actions">
-          <button class="btn btn-secondary btn-sm" onclick="chunkUIController.selectAllChunks()">
-            <i data-lucide="check-square"></i>
-            Select All
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="chunkUIController.exportChunks()">
-            <i data-lucide="download"></i>
-            Export Chunks
-          </button>
-        </div>
       </div>
       <div class="chunks-container" id="chunksListContainer">
         ${sortedChunks.map((chunk) => this.renderChunkItem(chunk)).join("")}
@@ -158,14 +148,6 @@ class ChunkUIController {
           <div class="chunk-drag-handle" title="Drag to reorder">
             <i data-lucide="grip-vertical"></i>
           </div>
-          <div class="chunk-selection">
-            <input type="checkbox" class="chunk-checkbox" data-chunk-id="${
-              chunk.id
-            }"
-                   onchange="chunkUIController.toggleChunkSelection('${
-                     chunk.id
-                   }', this.checked)">
-          </div>
           <div class="chunk-title-container">
             <input type="text" 
                    class="chunk-title-input" 
@@ -176,7 +158,6 @@ class ChunkUIController {
                    onblur="chunkUIController.validateChunkTitle(this)"
                    ${chunk.isLocked ? "readonly" : ""}>
             <div class="chunk-meta">
-              <span class="chunk-time">${chunk.estimatedTime || "2 min"}</span>
               <span class="chunk-status ${
                 chunk.generatedContent ? "generated" : "pending"
               }">

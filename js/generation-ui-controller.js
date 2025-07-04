@@ -429,10 +429,6 @@ class GenerationUIController {
           <div class="stat-value">${stats.pending}</div>
           <div class="stat-label">Pending</div>
         </div>
-        <div class="stat-item">
-          <div class="stat-value">${stats.locked}</div>
-          <div class="stat-label">Locked</div>
-        </div>
       </div>
     `;
   }
@@ -468,17 +464,6 @@ class GenerationUIController {
                 }">
                   ${hasContent ? "Generated" : "Pending"}
                 </span>
-                ${
-                  chunk.lastGenerated
-                    ? `
-                  <span class="last-updated" title="Last updated: ${new Date(
-                    chunk.lastGenerated
-                  ).toLocaleString()}">
-                    ${this.getTimeAgo(new Date(chunk.lastGenerated))}
-                  </span>
-                `
-                    : ""
-                }
               </div>
             </div>
           </div>
@@ -575,17 +560,6 @@ class GenerationUIController {
             <i data-lucide="target"></i>
             Ground Truth Guidance
           </h4>
-          <div class="ground-truth-actions">
-            <button class="btn btn-sm btn-link" 
-                    onclick="generationUIController.toggleGroundTruthExpanded('${
-                      chunk.id
-                    }')"
-                    title="Toggle ground truth display">
-              <i data-lucide="${
-                isExpanded ? "chevron-up" : "chevron-down"
-              }" class="expand-icon"></i>
-            </button>
-          </div>
         </div>
         <div class="ground-truth-content ${
           hasGroundTruth ? "has-content" : "empty"

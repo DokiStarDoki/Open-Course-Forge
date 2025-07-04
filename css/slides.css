@@ -7,7 +7,7 @@
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
   gap: 1rem;
 }
 
@@ -78,10 +78,6 @@
   margin: 0 0 0.5rem 0;
   color: #1f2937;
   font-size: 1.25rem;
-}
-
-.chunk-selection {
-  margin-right: 2px;
 }
 
 .chunk-meta {

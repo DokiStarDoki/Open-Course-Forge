@@ -261,7 +261,7 @@
 
 .dropdown-menu button {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.25rem 0.5rem;
   border: none;
   background: none;
   color: #374151;
@@ -535,11 +535,6 @@
   font-weight: 500;
 }
 
-.chunks-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
 .chunks-container {
   display: flex;
   flex-direction: column;
@@ -654,11 +649,6 @@
   display: flex;
   gap: 1rem;
   align-items: center;
-}
-
-.chunk-time {
-  color: #6b7280;
-  font-size: 0.875rem;
 }
 
 .chunk-status {
@@ -789,12 +779,10 @@
 /* ===== EMPTY STATES ===== */
 .empty-state {
   text-align: center;
-  padding: 3rem;
   color: #6b7280;
 }
 
 .empty-icon {
   font-size: 3rem;
-  margin-bottom: 1rem;
   opacity: 0.5;
 }
