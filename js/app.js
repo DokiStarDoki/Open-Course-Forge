@@ -28,6 +28,9 @@ class CourseForgeApp {
         this.setupEventListeners();
         this.restoreUIFromState();
 
+        // FIXED: Ensure proper controller reference passing
+        this.linkControllers();
+
         // ADDED: Extra delay to ensure all controllers are ready for UI updates
         setTimeout(() => {
           if (this.fileUploadController) {
@@ -58,7 +61,7 @@ class CourseForgeApp {
   }
 
   /**
-   * Initialize core application components
+   * Initialize core application components with proper async handling
    */
   async initializeComponents() {
     // Check browser support
@@ -73,22 +76,32 @@ class CourseForgeApp {
       }
     }
 
-    // Initialize LLM Service
+    // Initialize LLM Service with proper async handling
     try {
       this.llmService = new LLMService();
+
+      // FIXED: Wait for LLM service to be ready before proceeding
+      StatusManager.showLoading("Initializing AI service...");
+      await this.llmService.ensureReady();
+      StatusManager.hide();
+
+      console.log("✅ LLM Service initialized and ready");
     } catch (error) {
       console.error("Failed to initialize LLM Service:", error);
       StatusManager.showWarning(
         "AI features may not work properly. Check your API configuration."
       );
+      // Continue without AI service - app should still work for non-AI features
+      this.llmService = null;
     }
 
-    // Initialize managers
-    this.chunkManager = new ChunkManager(
-      this.stateManager,
-      this.eventSystem,
-      this.llmService
-    );
+    // Initialize managers with proper dependency injection
+    this.chunkManager = new ChunkManager(this.stateManager, this.eventSystem);
+
+    // FIXED: Set LLM service reference in chunk manager
+    if (this.llmService) {
+      this.chunkManager.setLLMService(this.llmService);
+    }
 
     this.contentGenerator = new ContentGenerator(
       this.stateManager,
@@ -102,7 +115,7 @@ class CourseForgeApp {
   }
 
   /**
-   * Initialize UI controllers (FIXED to assign global variables)
+   * Initialize UI controllers (FIXED to assign global variables and proper references)
    */
   setupControllers() {
     console.log("Setting up controllers...");
@@ -122,15 +135,13 @@ class CourseForgeApp {
 
     this.chunkUIController = new ChunkUIController(
       this.stateManager,
-      this.eventSystem,
-      this.chunkManager
+      this.eventSystem
     );
     window.chunkUIController = this.chunkUIController;
 
     this.generationUIController = new GenerationUIController(
       this.stateManager,
-      this.eventSystem,
-      this.contentGenerator
+      this.eventSystem
     );
     window.generationUIController = this.generationUIController;
 
@@ -150,6 +161,35 @@ class CourseForgeApp {
         "fileUploadController not assigned, attempting manual assignment..."
       );
       window.fileUploadController = this.fileUploadController;
+    }
+  }
+
+  /**
+   * FIXED: Link controllers with proper references
+   */
+  linkControllers() {
+    // Set chunk manager reference in chunk UI controller
+    if (this.chunkUIController && this.chunkManager) {
+      this.chunkUIController.setChunkManager(this.chunkManager);
+    }
+
+    // FIXED: Set content generator reference in generation UI controller
+    if (this.generationUIController && this.contentGenerator) {
+      this.generationUIController.setContentGenerator(this.contentGenerator);
+      console.log("✅ Content generator linked to generation UI controller");
+    } else {
+      console.error(
+        "❌ Failed to link content generator to generation UI controller"
+      );
+    }
+
+    // Initialize all controllers
+    if (this.chunkUIController) {
+      this.chunkUIController.initialize();
+    }
+
+    if (this.generationUIController) {
+      this.generationUIController.initialize();
     }
   }
 
@@ -200,6 +240,11 @@ class CourseForgeApp {
         id: "loadCourseBtn",
         handler: () => this.triggerCourseLoad(),
       },
+      // FIXED: Add generate all button handler
+      {
+        id: "generateAllBtn",
+        handler: () => this.generateAllContent(),
+      },
     ];
 
     navigationEvents.forEach(({ id, handler }) => {
@@ -212,13 +257,25 @@ class CourseForgeApp {
   }
 
   /**
+   * FIXED: Generate all content method
+   */
+  async generateAllContent() {
+    if (!this.contentGenerator) {
+      StatusManager.showError("Content generator not initialized");
+      return;
+    }
+
+    await this.contentGenerator.generateAllContent();
+  }
+
+  /**
    * Trigger course load (FIXED)
    */
   triggerCourseLoad() {
     if (this.fileUploadController) {
-      this.fileUploadController.loadExistingCourse();
+      this.fileUploadController.triggerCourseLoad();
     } else if (window.fileUploadController) {
-      window.fileUploadController.loadExistingCourse();
+      window.fileUploadController.triggerCourseLoad();
     } else {
       StatusManager.showError("File upload controller not available");
     }
@@ -542,6 +599,7 @@ class CourseForgeApp {
       "proceedToGenerationBtn",
       "exportJsonBtn",
       "exportHtmlBtn",
+      "generateAllBtn", // ADDED: Include generate all button
     ];
 
     buttonIds.forEach((buttonId) => {

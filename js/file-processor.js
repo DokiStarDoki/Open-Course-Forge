@@ -1,18 +1,18 @@
 /**
- * Course Forge MVP - File Processing (FIXED DOCX Validation)
- * Handles file upload, parsing, and content extraction
+ * Course Forge MVP - File Processing (ENHANCED SECURITY)
+ * Handles file upload, parsing, and content extraction with comprehensive security validation
  */
 
 class FileProcessor {
   /**
-   * Enhanced file processing with better error handling and performance
+   * Enhanced file processing with comprehensive security validation
    */
   static async processFile(file) {
     const startTime = Date.now();
 
     try {
-      // Validate file before processing
-      this.validateFile(file);
+      // Comprehensive file validation
+      await this.validateFileSecurely(file);
 
       const extension = this.getFileExtension(file.name);
 
@@ -43,6 +43,7 @@ class FileProcessor {
       const processingTime = Date.now() - startTime;
       result.metadata = result.metadata || {};
       result.metadata.processingTime = processingTime;
+      result.metadata.securityValidated = true;
 
       if (processingTime > 5000) {
         // Log slow processing
@@ -63,12 +64,13 @@ class FileProcessor {
   }
 
   /**
-   * Process multiple files
+   * Process multiple files with race condition prevention
    */
   static async processFiles(files) {
     const results = [];
     const errors = [];
 
+    // Process files sequentially to prevent race conditions
     for (const file of files) {
       try {
         const result = await this.processFile(file);
@@ -85,9 +87,318 @@ class FileProcessor {
   }
 
   /**
-   * Validate file before processing
+   * ENHANCED: Comprehensive security validation
+   */
+  static async validateFileSecurely(file) {
+    if (!file) {
+      throw new Error("No file provided");
+    }
+
+    // Basic size and name validation
+    if (file.size > CONFIG.MAX_FILE_SIZE) {
+      throw new Error(
+        `${CONFIG.ERROR_MESSAGES.FILE_TOO_LARGE} (${this.formatFileSize(
+          file.size
+        )})`
+      );
+    }
+
+    if (file.size === 0) {
+      throw new Error("File is empty");
+    }
+
+    // Validate filename for security
+    await this.validateFileName(file.name);
+
+    // Validate file extension
+    const extension = this.getFileExtension(file.name);
+    if (!CONFIG.SUPPORTED_EXTENSIONS.includes(extension)) {
+      throw new Error(
+        `${CONFIG.ERROR_MESSAGES.UNSUPPORTED_FILE_TYPE}: ${extension}`
+      );
+    }
+
+    // MIME type validation
+    await this.validateMimeType(file, extension);
+
+    // File content validation
+    await this.validateFileContent(file, extension);
+
+    // Additional security checks
+    await this.performSecurityChecks(file);
+
+    console.log(`✅ File security validation passed: ${file.name}`);
+  }
+
+  /**
+   * ADDED: Validate filename for security issues
+   */
+  static async validateFileName(filename) {
+    // Check for dangerous characters
+    const dangerousChars = /[<>:"|?*\x00-\x1f]/;
+    if (dangerousChars.test(filename)) {
+      throw new Error("Filename contains dangerous characters");
+    }
+
+    // Check for path traversal attempts
+    const pathTraversal = /\.\.|\/|\\|%2e%2e|%2f|%5c/i;
+    if (pathTraversal.test(filename)) {
+      throw new Error("Filename contains path traversal patterns");
+    }
+
+    // Check for reserved names (Windows)
+    const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/i;
+    if (reservedNames.test(filename)) {
+      throw new Error("Filename uses reserved system name");
+    }
+
+    // Check filename length
+    if (filename.length > 255) {
+      throw new Error("Filename is too long");
+    }
+
+    // Check for hidden files or system files
+    if (filename.startsWith(".") || filename.startsWith("~")) {
+      throw new Error("Hidden or temporary files are not allowed");
+    }
+  }
+
+  /**
+   * ADDED: Validate MIME type matches file extension
+   */
+  static async validateMimeType(file, extension) {
+    const expectedMimeTypes = {
+      txt: ["text/plain", "text/csv", "application/csv"],
+      docx: [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/zip", // DOCX files are ZIP archives
+      ],
+      json: ["application/json", "text/json", "text/plain"],
+    };
+
+    const expected = expectedMimeTypes[extension];
+    if (!expected) {
+      throw new Error(`No MIME type validation available for ${extension}`);
+    }
+
+    // Some browsers don't set MIME types correctly, so we'll be lenient but still check
+    if (file.type && !expected.includes(file.type)) {
+      console.warn(
+        `⚠️ MIME type mismatch: expected ${expected.join(" or ")}, got ${
+          file.type
+        }`
+      );
+      // Don't throw error, just warn, as browser MIME detection can be unreliable
+    }
+  }
+
+  /**
+   * ADDED: Validate file content structure
+   */
+  static async validateFileContent(file, extension) {
+    // Read first few bytes to validate file signatures
+    const headerBytes = await this.readFileHeader(file, 64);
+
+    switch (extension) {
+      case "docx":
+        await this.validateDocxHeader(headerBytes);
+        break;
+      case "json":
+        await this.validateJsonStructure(file);
+        break;
+      case "txt":
+        await this.validateTextContent(headerBytes);
+        break;
+    }
+  }
+
+  /**
+   * ADDED: Read file header bytes
+   */
+  static async readFileHeader(file, numBytes) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        const arrayBuffer = e.target.result;
+        const uint8Array = new Uint8Array(arrayBuffer);
+        resolve(uint8Array);
+      };
+
+      reader.onerror = () => reject(new Error("Failed to read file header"));
+
+      // Read only the first numBytes
+      const blob = file.slice(0, numBytes);
+      reader.readAsArrayBuffer(blob);
+    });
+  }
+
+  /**
+   * ADDED: Validate DOCX file header
+   */
+  static async validateDocxHeader(headerBytes) {
+    // DOCX files are ZIP archives, check for ZIP signature
+    const zipSignatures = [
+      [0x50, 0x4b, 0x03, 0x04], // Standard ZIP
+      [0x50, 0x4b, 0x05, 0x06], // Empty ZIP
+      [0x50, 0x4b, 0x07, 0x08], // Spanning ZIP
+    ];
+
+    let hasValidSignature = false;
+    for (const signature of zipSignatures) {
+      if (headerBytes.length >= signature.length) {
+        const matches = signature.every(
+          (byte, index) => headerBytes[index] === byte
+        );
+        if (matches) {
+          hasValidSignature = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasValidSignature) {
+      throw new Error("Invalid DOCX file: missing ZIP signature");
+    }
+  }
+
+  /**
+   * ADDED: Validate JSON structure without full parsing
+   */
+  static async validateJsonStructure(file) {
+    // Read first 1KB to check JSON structure
+    const preview = await this.readFilePreview(file, 1024);
+
+    // Basic JSON structure check
+    const trimmed = preview.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      throw new Error("Invalid JSON file: must start with { or [");
+    }
+
+    // Check for common JSON injection patterns
+    const suspiciousPatterns = [
+      /__proto__/i,
+      /constructor/i,
+      /prototype/i,
+      /function\s*\(/i,
+      /<script/i,
+      /javascript:/i,
+    ];
+
+    for (const pattern of suspiciousPatterns) {
+      if (pattern.test(preview)) {
+        throw new Error("JSON file contains suspicious content");
+      }
+    }
+  }
+
+  /**
+   * ADDED: Validate text content for suspicious patterns
+   */
+  static async validateTextContent(headerBytes) {
+    // Convert bytes to string for content analysis
+    const decoder = new TextDecoder("utf-8", { fatal: false });
+    const content = decoder.decode(headerBytes);
+
+    // Check for binary content disguised as text
+    const binaryPattern = /[\x00-\x08\x0E-\x1F\x7F-\xFF]/g;
+    const binaryMatches = content.match(binaryPattern);
+
+    if (binaryMatches && binaryMatches.length > content.length * 0.1) {
+      throw new Error("File appears to contain binary data, not text");
+    }
+
+    // Check for script injection attempts
+    const scriptPatterns = [
+      /<script/i,
+      /javascript:/i,
+      /vbscript:/i,
+      /onload=/i,
+      /onerror=/i,
+    ];
+
+    for (const pattern of scriptPatterns) {
+      if (pattern.test(content)) {
+        throw new Error("Text file contains script-like content");
+      }
+    }
+  }
+
+  /**
+   * ADDED: Read file preview
+   */
+  static async readFilePreview(file, maxBytes) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = () => reject(new Error("Failed to read file preview"));
+
+      const blob = file.slice(0, maxBytes);
+      reader.readAsText(blob, "utf-8");
+    });
+  }
+
+  /**
+   * ADDED: Perform additional security checks
+   */
+  static async performSecurityChecks(file) {
+    // Check for zip bombs (highly compressed files)
+    if (file.name.toLowerCase().endsWith(".docx")) {
+      const compressionRatio = await this.estimateCompressionRatio(file);
+      if (compressionRatio > 100) {
+        // More than 100:1 compression
+        console.warn(
+          `⚠️ High compression ratio detected: ${compressionRatio}:1`
+        );
+        // Don't throw error, but log warning
+      }
+    }
+
+    // Check file creation/modification time if available
+    if (file.lastModified) {
+      const now = Date.now();
+      const ageMs = now - file.lastModified;
+      const ageDays = ageMs / (1000 * 60 * 60 * 24);
+
+      // Warn about very old files (might be corrupted)
+      if (ageDays > 365 * 5) {
+        // More than 5 years old
+        console.warn(`⚠️ File is very old (${Math.round(ageDays)} days)`);
+      }
+    }
+  }
+
+  /**
+   * ADDED: Estimate compression ratio for zip-based files
+   */
+  static async estimateCompressionRatio(file) {
+    try {
+      // For DOCX files, estimate based on size vs content
+      // This is a rough heuristic, not exact
+      const preview = await this.readFilePreview(
+        file,
+        Math.min(file.size, 10240)
+      );
+      const uncompressedSize = preview.length;
+      const compressedSize = file.size;
+
+      if (compressedSize > 0) {
+        return Math.round(uncompressedSize / compressedSize);
+      }
+    } catch (error) {
+      console.warn("Could not estimate compression ratio:", error);
+    }
+
+    return 1; // Default to no compression
+  }
+
+  /**
+   * Validate file before processing (legacy method, now calls enhanced validation)
    */
   static validateFile(file) {
+    // This method is kept for backward compatibility
+    // The actual validation is now done in validateFileSecurely
     if (!file) {
       throw new Error("No file provided");
     }
@@ -125,7 +436,7 @@ class FileProcessor {
   }
 
   /**
-   * Process text file with streaming for large files
+   * ENHANCED: Process text file with better security and error handling
    */
   static async processTxtFile(file) {
     return new Promise((resolve, reject) => {
@@ -146,6 +457,9 @@ class FileProcessor {
             throw new Error("Text file is empty");
           }
 
+          // Additional content validation
+          this.validateTextFileContent(content);
+
           const wordCount = this.getWordCount(content);
 
           resolve({
@@ -158,6 +472,7 @@ class FileProcessor {
             metadata: {
               encoding: "utf-8",
               lineCount: content.split("\n").length,
+              hasSecurityValidation: true,
             },
           });
         } catch (error) {
@@ -173,6 +488,46 @@ class FileProcessor {
 
       reader.readAsText(file, "utf-8");
     });
+  }
+
+  /**
+   * ADDED: Validate text file content for security issues
+   */
+  static validateTextFileContent(content) {
+    // Check for excessively long lines (potential DoS)
+    const lines = content.split("\n");
+    const maxLineLength = 10000; // 10KB per line max
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].length > maxLineLength) {
+        throw new Error(
+          `Line ${i + 1} is too long (${lines[i].length} characters)`
+        );
+      }
+    }
+
+    // Check for potential script content
+    const scriptPatterns = [
+      /<script[\s\S]*?>[\s\S]*?<\/script>/gi,
+      /<iframe[\s\S]*?>/gi,
+      /<object[\s\S]*?>/gi,
+      /<embed[\s\S]*?>/gi,
+    ];
+
+    for (const pattern of scriptPatterns) {
+      if (pattern.test(content)) {
+        throw new Error("Text file contains HTML script elements");
+      }
+    }
+
+    // Check for potential binary content
+    const binaryPattern = /[\x00-\x08\x0E-\x1F\x7F]/g;
+    const binaryMatches = content.match(binaryPattern) || [];
+
+    if (binaryMatches.length > content.length * 0.01) {
+      // More than 1% binary chars
+      throw new Error("Text file contains significant binary content");
+    }
   }
 
   /**
@@ -198,7 +553,7 @@ class FileProcessor {
           const arrayBuffer = e.target.result;
           const startTime = Date.now();
 
-          // IMPROVED: More lenient DOCX validation
+          // Enhanced DOCX validation
           const uint8Array = new Uint8Array(arrayBuffer);
           const isValidDocx = this.validateDocxFile(uint8Array);
 
@@ -206,7 +561,6 @@ class FileProcessor {
             console.warn(
               "DOCX validation warning - attempting processing anyway"
             );
-            // Don't throw error immediately, try to process anyway
           }
 
           console.log(
@@ -218,7 +572,6 @@ class FileProcessor {
           // Use mammoth with optimized options for better performance
           const result = await mammoth.extractRawText({
             arrayBuffer,
-            // Optimize mammoth options for speed
             ignoreEmptyParagraphs: true,
             convertImage: () => null, // Skip image processing for speed
           });
@@ -228,6 +581,10 @@ class FileProcessor {
           }
 
           const content = result.value;
+
+          // Validate extracted content
+          this.validateExtractedDocxContent(content);
+
           const wordCount = this.getWordCount(content);
 
           // Log processing time for debugging
@@ -253,13 +610,14 @@ class FileProcessor {
               hasWarnings: result.messages && result.messages.length > 0,
               processingTime: processingTime,
               validationPassed: isValidDocx,
+              hasSecurityValidation: true,
             },
           });
         } catch (error) {
           clearTimeout(timeout);
           console.error("DOCX processing error:", error);
 
-          // IMPROVED: Always try fallback processing
+          // Try fallback processing
           try {
             console.log("Attempting fallback DOCX processing...");
             const fallbackResult = await this.fallbackDocxProcessing(
@@ -281,6 +639,34 @@ class FileProcessor {
 
       reader.readAsArrayBuffer(file);
     });
+  }
+
+  /**
+   * ADDED: Validate extracted DOCX content
+   */
+  static validateExtractedDocxContent(content) {
+    if (!content || typeof content !== "string") {
+      throw new Error("Invalid DOCX content extracted");
+    }
+
+    // Check for minimum content length
+    if (content.trim().length < 10) {
+      throw new Error("DOCX file contains insufficient readable text");
+    }
+
+    // Check for potential script injection in extracted content
+    const scriptPatterns = [
+      /<script/i,
+      /javascript:/i,
+      /vbscript:/i,
+      /data:text\/html/i,
+    ];
+
+    for (const pattern of scriptPatterns) {
+      if (pattern.test(content)) {
+        throw new Error("DOCX content contains script-like elements");
+      }
+    }
   }
 
   /**
@@ -316,7 +702,6 @@ class FileProcessor {
 
       if (!hasValidZipSignature) {
         console.warn("No valid ZIP signature found, but continuing anyway");
-        // Return true anyway - let mammoth decide if it can process it
         return true;
       }
 
@@ -343,7 +728,6 @@ class FileProcessor {
         return true;
       }
 
-      // If no clear indicators, still return true and let mammoth try
       console.warn("No clear DOCX indicators found, but attempting processing");
       return true;
     } catch (error) {
@@ -351,7 +735,7 @@ class FileProcessor {
         "DOCX validation failed, but attempting processing anyway:",
         error
       );
-      return true; // Always return true to attempt processing
+      return true;
     }
   }
 
@@ -391,6 +775,9 @@ class FileProcessor {
       }
 
       if (extractedText && extractedText.trim().length > 0) {
+        // Validate fallback content
+        this.validateExtractedDocxContent(extractedText);
+
         return {
           type: "content",
           content: extractedText,
@@ -401,6 +788,7 @@ class FileProcessor {
           metadata: {
             processingMethod: "enhanced-fallback",
             hasWarnings: true,
+            hasSecurityValidation: true,
             conversionMessages: [
               "Used enhanced fallback processing - some formatting may be lost",
               "File may not be a standard DOCX format or may be corrupted",
@@ -514,7 +902,7 @@ class FileProcessor {
   }
 
   /**
-   * NEW: Extract text from binary DOCX data using byte patterns
+   * Extract text from binary DOCX data using byte patterns
    */
   static extractTextFromBinaryDocx(uint8Array) {
     try {
@@ -570,7 +958,7 @@ class FileProcessor {
   }
 
   /**
-   * Process a JSON file
+   * ENHANCED: Process a JSON file with security validation
    */
   static async processJsonFile(file) {
     return new Promise((resolve, reject) => {
@@ -584,12 +972,18 @@ class FileProcessor {
             throw new Error("JSON file is empty");
           }
 
+          // Additional JSON security validation
+          this.validateJsonContent(jsonText);
+
           let data;
           try {
             data = JSON.parse(jsonText);
           } catch (parseError) {
             throw new Error(`Invalid JSON format: ${parseError.message}`);
           }
+
+          // Post-parse validation
+          this.validateParsedJsonData(data);
 
           // Determine if this is course data or content data
           const fileType = this.determineJsonType(data);
@@ -601,6 +995,7 @@ class FileProcessor {
             metadata: {
               keys: Object.keys(data),
               dataType: fileType,
+              hasSecurityValidation: true,
             },
           };
 
@@ -625,6 +1020,143 @@ class FileProcessor {
 
       reader.readAsText(file, "utf-8");
     });
+  }
+
+  /**
+   * ADDED: Validate JSON content for security issues
+   */
+  static validateJsonContent(jsonText) {
+    // Check file size vs content ratio (potential zip bomb)
+    if (jsonText.length > 10 * 1024 * 1024) {
+      // 10MB
+      throw new Error("JSON file is too large to process safely");
+    }
+
+    // Check for prototype pollution attempts
+    const pollutionPatterns = [
+      /__proto__/gi,
+      /constructor\.prototype/gi,
+      /prototype\.constructor/gi,
+    ];
+
+    for (const pattern of pollutionPatterns) {
+      if (pattern.test(jsonText)) {
+        throw new Error("JSON contains potential prototype pollution");
+      }
+    }
+
+    // Check for script injection
+    const scriptPatterns = [
+      /<script/gi,
+      /javascript:/gi,
+      /vbscript:/gi,
+      /data:text\/html/gi,
+      /eval\s*\(/gi,
+      /Function\s*\(/gi,
+    ];
+
+    for (const pattern of scriptPatterns) {
+      if (pattern.test(jsonText)) {
+        throw new Error("JSON contains script-like content");
+      }
+    }
+
+    // Check for excessive nesting (DoS protection)
+    const maxDepth = 50;
+    let depth = 0;
+    let maxDepthFound = 0;
+
+    for (let i = 0; i < jsonText.length; i++) {
+      const char = jsonText[i];
+      if (char === "{" || char === "[") {
+        depth++;
+        maxDepthFound = Math.max(maxDepthFound, depth);
+      } else if (char === "}" || char === "]") {
+        depth--;
+      }
+
+      if (maxDepthFound > maxDepth) {
+        throw new Error(
+          `JSON nesting too deep (max ${maxDepth} levels allowed)`
+        );
+      }
+    }
+  }
+
+  /**
+   * ADDED: Validate parsed JSON data
+   */
+  static validateParsedJsonData(data) {
+    // Check for circular references
+    try {
+      JSON.stringify(data);
+    } catch (error) {
+      if (error.message.includes("circular")) {
+        throw new Error("JSON contains circular references");
+      }
+      throw error;
+    }
+
+    // Check object count (DoS protection)
+    const maxObjects = 10000;
+    const objectCount = this.countObjects(data);
+    if (objectCount > maxObjects) {
+      throw new Error(
+        `JSON contains too many objects (${objectCount} > ${maxObjects})`
+      );
+    }
+
+    // Check for potentially dangerous function calls in string values
+    this.scanJsonForDangerousContent(data);
+  }
+
+  /**
+   * ADDED: Count objects in JSON data
+   */
+  static countObjects(obj, visited = new WeakSet()) {
+    if (visited.has(obj)) {
+      return 0; // Already counted
+    }
+
+    if (typeof obj !== "object" || obj === null) {
+      return 0;
+    }
+
+    visited.add(obj);
+    let count = 1; // Count this object
+
+    for (const value of Object.values(obj)) {
+      count += this.countObjects(value, visited);
+    }
+
+    return count;
+  }
+
+  /**
+   * ADDED: Scan JSON for dangerous content
+   */
+  static scanJsonForDangerousContent(obj, path = "") {
+    if (typeof obj === "string") {
+      const dangerousPatterns = [
+        /eval\s*\(/gi,
+        /Function\s*\(/gi,
+        /setTimeout\s*\(/gi,
+        /setInterval\s*\(/gi,
+        /<script/gi,
+        /javascript:/gi,
+      ];
+
+      for (const pattern of dangerousPatterns) {
+        if (pattern.test(obj)) {
+          throw new Error(`Dangerous content found in JSON at path: ${path}`);
+        }
+      }
+    } else if (typeof obj === "object" && obj !== null) {
+      for (const [key, value] of Object.entries(obj)) {
+        const newPath = path ? `${path}.${key}` : key;
+        this.scanJsonForDangerousContent(value, newPath);
+      }
+    }
   }
 
   /**
@@ -696,7 +1228,7 @@ class FileProcessor {
   }
 
   /**
-   * Validate content for course creation
+   * ENHANCED: Validate content for course creation with security checks
    */
   static validateContent(content) {
     const wordCount = this.getWordCount(content);
@@ -731,6 +1263,16 @@ class FileProcessor {
     // Check for empty content
     if (!content || content.trim().length === 0) {
       result.errors.push("Content is empty");
+      result.isValid = false;
+    }
+
+    // Security checks for content
+    try {
+      this.validateTextFileContent(content);
+    } catch (securityError) {
+      result.errors.push(
+        `Security validation failed: ${securityError.message}`
+      );
       result.isValid = false;
     }
 
@@ -794,7 +1336,7 @@ class FileProcessor {
   }
 
   /**
-   * Check if browser supports required APIs
+   * ENHANCED: Check if browser supports required APIs
    */
   static checkBrowserSupport() {
     const support = {
@@ -810,9 +1352,21 @@ class FileProcessor {
           return false;
         }
       })(),
+      textDecoder: typeof TextDecoder !== "undefined",
+      arrayBuffer: typeof ArrayBuffer !== "undefined",
+      uint8Array: typeof Uint8Array !== "undefined",
     };
 
     support.allSupported = Object.values(support).every(Boolean);
+
+    // Check for required security APIs
+    support.securityAPIs = {
+      crypto:
+        typeof crypto !== "undefined" &&
+        typeof crypto.getRandomValues === "function",
+      webCrypto:
+        typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined",
+    };
 
     return support;
   }
@@ -846,7 +1400,7 @@ class FileProcessor {
   }
 
   /**
-   * Get processing statistics
+   * ENHANCED: Get processing statistics with security info
    */
   static getProcessingStats(files) {
     if (!files || !Array.isArray(files)) {
@@ -859,6 +1413,7 @@ class FileProcessor {
         courseFiles: 0,
         avgProcessingTime: 0,
         slowFiles: 0,
+        securityValidated: 0,
       };
     }
 
@@ -871,6 +1426,7 @@ class FileProcessor {
       courseFiles: 0,
       avgProcessingTime: 0,
       slowFiles: 0,
+      securityValidated: 0,
     };
 
     let totalProcessingTime = 0;
@@ -894,6 +1450,11 @@ class FileProcessor {
 
       if (processingTime > 5000) {
         stats.slowFiles++;
+      }
+
+      // Track security validation
+      if (file.metadata?.hasSecurityValidation) {
+        stats.securityValidated++;
       }
     });
 

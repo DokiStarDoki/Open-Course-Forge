@@ -1,5 +1,5 @@
 /**
- * Course Forge MVP - LLM Service (XML-BASED EXTRACTION)
+ * Course Forge MVP - LLM Service (FIXED RACE CONDITIONS)
  * Handles communication with AI models using XML tags for reliable data extraction
  * UPDATED: Now supports both OpenRouter/DeepSeek and ChatGPT API based on config
  */
@@ -11,18 +11,32 @@ class LLMService {
     this.apiUrl = null;
     this.isReady = false;
     this.initializationPromise = null;
+    this.requestQueue = []; // ADDED: Request queue for rate limiting
+    this.isProcessingQueue = false; // ADDED: Queue processing flag
+    this.rateLimitConfig = {
+      maxRequestsPerMinute: 20,
+      requestInterval: 3000, // 3 seconds between requests
+      maxConcurrentRequests: 2,
+    };
+    this.requestHistory = []; // ADDED: Track request timing
+    this.concurrentRequests = 0; // ADDED: Track concurrent requests
 
     // Start initialization but don't block constructor
     this.initializationPromise = this.initializeAPI();
   }
 
   /**
-   * Initialize API configuration
+   * Initialize API configuration with enhanced error handling
    */
   async initializeAPI() {
     try {
+      console.log("🚀 Initializing LLM Service...");
+
       // Check if we're in development and have local config
       if (this.isDevelopment()) {
+        console.log(
+          "📍 Development environment detected, loading local config..."
+        );
         await this.loadLocalConfig();
       }
 
@@ -32,17 +46,23 @@ class LLMService {
       // Validate setup
       this.validateSetup();
 
+      // ADDED: Test the connection with a simple request
+      await this.testConnection();
+
       this.isReady = true;
 
       if (CONFIG.DEBUG.ENABLED) {
-        console.log("LLMService initialized successfully (XML Mode)");
-        console.log("API Provider:", CONFIG.getActiveAPIProvider());
-        console.log("API URL:", this.apiUrl);
-        console.log("Using proxy:", this.isUsingProxy());
-        console.log("Has required API key:", this.hasRequiredAPIKey());
+        console.log("✅ LLMService initialized successfully");
+        console.log("📊 Configuration:", {
+          provider: CONFIG.getActiveAPIProvider(),
+          apiUrl: this.apiUrl,
+          usingProxy: this.isUsingProxy(),
+          hasRequiredApiKey: this.hasRequiredAPIKey(),
+          rateLimits: this.rateLimitConfig,
+        });
       }
     } catch (error) {
-      console.error("Failed to initialize LLMService:", error);
+      console.error("❌ Failed to initialize LLMService:", error);
 
       // Show user-friendly error message
       if (this.isDevelopment() && !this.hasRequiredAPIKey()) {
@@ -64,17 +84,52 @@ class LLMService {
   }
 
   /**
-   * Ensure service is ready before making requests
+   * ADDED: Test connection to AI service
+   */
+  async testConnection() {
+    try {
+      console.log("🔗 Testing AI service connection...");
+
+      const testMessages = [
+        { role: "system", content: "You are a test assistant." },
+        { role: "user", content: "Respond with exactly the word 'OK'" },
+      ];
+
+      const response = await this.makeDirectRequest(testMessages, {
+        maxTokens: 10,
+        temperature: 0,
+        skipQueue: true, // Skip rate limiting for test
+      });
+
+      if (response.choices && response.choices.length > 0) {
+        console.log("✅ AI service connection test successful");
+        return true;
+      } else {
+        throw new Error("Invalid response from AI service");
+      }
+    } catch (error) {
+      console.warn("⚠️ AI service connection test failed:", error.message);
+      // Don't throw - service might still work for real requests
+      return false;
+    }
+  }
+
+  /**
+   * ENHANCED: Ensure service is ready with better error handling
    */
   async ensureReady() {
     if (!this.initializationPromise) {
       throw new Error("LLM Service not initialized");
     }
 
-    await this.initializationPromise;
+    try {
+      await this.initializationPromise;
+    } catch (error) {
+      throw new Error(`LLM Service initialization failed: ${error.message}`);
+    }
 
     if (!this.isReady) {
-      throw new Error("LLM Service failed to initialize");
+      throw new Error("LLM Service failed to initialize properly");
     }
   }
 
@@ -90,16 +145,16 @@ class LLMService {
   }
 
   /**
-   * Load local configuration (development only)
+   * Load local configuration (development only) with timeout
    */
   async loadLocalConfig() {
     if (!this.isDevelopment()) return;
 
     try {
-      // Wait for local config to load
-      await this.waitForLocalConfig();
+      // Wait for local config to load with longer timeout
+      const configLoaded = await this.waitForLocalConfig(5000);
 
-      if (window.LOCAL_CONFIG) {
+      if (configLoaded && window.LOCAL_CONFIG) {
         // Load OpenRouter API key
         if (window.LOCAL_CONFIG.OPENROUTER_API_KEY) {
           this.openRouterApiKey = window.LOCAL_CONFIG.OPENROUTER_API_KEY;
@@ -111,17 +166,22 @@ class LLMService {
           this.openAIApiKey = window.LOCAL_CONFIG.OPENAI_API_KEY;
           console.log("✅ OpenAI API key loaded");
         }
+      } else {
+        console.warn(
+          "⚠️ Local config not available after timeout, will use proxy"
+        );
       }
     } catch (error) {
-      console.warn("⚠️ Local config not available, will use proxy");
+      console.warn("⚠️ Local config loading failed:", error.message);
     }
   }
 
   /**
-   * Wait for local config to load
+   * Wait for local config to load with enhanced checking
    */
-  async waitForLocalConfig(timeoutMs = 3000) {
+  async waitForLocalConfig(timeoutMs = 5000) {
     const startTime = Date.now();
+    const checkInterval = 100;
 
     while (Date.now() - startTime < timeoutMs) {
       if (
@@ -131,7 +191,7 @@ class LLMService {
       ) {
         return true;
       }
-      await this.wait(100);
+      await this.wait(checkInterval);
     }
 
     return false;
@@ -193,7 +253,7 @@ class LLMService {
    */
   validateSetup() {
     if (this.isUsingProxy()) {
-      console.log("Using proxy URL:", this.apiUrl);
+      console.log("📡 Using proxy URL:", this.apiUrl);
       return true;
     } else if (!this.hasRequiredAPIKey()) {
       const provider = CONFIG.getActiveAPIProvider();
@@ -201,10 +261,10 @@ class LLMService {
         provider === "OPENAI" ? "OPENAI_API_KEY" : "OPENROUTER_API_KEY";
 
       console.warn(
-        `No ${provider} API key available. Please set up local.config.js with your ${keyName}.`
+        `⚠️ No ${provider} API key available. Please set up local.config.js with your ${keyName}.`
       );
       console.warn(
-        `Example: window.LOCAL_CONFIG = { ${keyName}: "your-key-here" };`
+        `📝 Example: window.LOCAL_CONFIG = { ${keyName}: "your-key-here" };`
       );
       throw new Error(
         `No ${provider} API key available and proxy not properly configured`
@@ -214,11 +274,158 @@ class LLMService {
   }
 
   /**
-   * Make API request to LLM with improved error handling
+   * ENHANCED: Make API request with rate limiting and queue management
    */
   async makeRequest(messages, options = {}) {
     await this.ensureReady();
 
+    // Skip queue for test requests
+    if (options.skipQueue) {
+      return this.makeDirectRequest(messages, options);
+    }
+
+    // Add request to queue
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push({
+        messages,
+        options,
+        resolve,
+        reject,
+        timestamp: Date.now(),
+      });
+
+      // Start processing queue if not already processing
+      if (!this.isProcessingQueue) {
+        this.processRequestQueue();
+      }
+    });
+  }
+
+  /**
+   * ADDED: Process request queue with rate limiting
+   */
+  async processRequestQueue() {
+    if (this.isProcessingQueue) return;
+
+    this.isProcessingQueue = true;
+    console.log(
+      `📊 Processing request queue (${this.requestQueue.length} requests)`
+    );
+
+    while (this.requestQueue.length > 0) {
+      // Check rate limits
+      if (!this.canMakeRequest()) {
+        const waitTime = this.getWaitTime();
+        console.log(`⏳ Rate limit reached, waiting ${waitTime}ms`);
+        await this.wait(waitTime);
+        continue;
+      }
+
+      // Get next request
+      const request = this.requestQueue.shift();
+
+      try {
+        console.log(
+          `🔄 Processing request (${this.requestQueue.length} remaining)`
+        );
+
+        // Track concurrent requests
+        this.concurrentRequests++;
+
+        // Make the actual request
+        const response = await this.makeDirectRequest(
+          request.messages,
+          request.options
+        );
+
+        // Track request completion
+        this.recordRequest();
+        this.concurrentRequests--;
+
+        request.resolve(response);
+
+        // Wait between requests to avoid overwhelming the API
+        if (this.requestQueue.length > 0) {
+          await this.wait(this.rateLimitConfig.requestInterval);
+        }
+      } catch (error) {
+        this.concurrentRequests--;
+        request.reject(error);
+
+        // Continue processing other requests even if one fails
+        console.error(
+          "❌ Request failed, continuing with queue:",
+          error.message
+        );
+      }
+    }
+
+    this.isProcessingQueue = false;
+    console.log("✅ Request queue processing complete");
+  }
+
+  /**
+   * ADDED: Check if we can make a request based on rate limits
+   */
+  canMakeRequest() {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60000;
+
+    // Clean old requests
+    this.requestHistory = this.requestHistory.filter(
+      (time) => time > oneMinuteAgo
+    );
+
+    // Check concurrent requests
+    if (this.concurrentRequests >= this.rateLimitConfig.maxConcurrentRequests) {
+      return false;
+    }
+
+    // Check requests per minute
+    if (
+      this.requestHistory.length >= this.rateLimitConfig.maxRequestsPerMinute
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * ADDED: Get wait time for rate limiting
+   */
+  getWaitTime() {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60000;
+
+    // Clean old requests
+    this.requestHistory = this.requestHistory.filter(
+      (time) => time > oneMinuteAgo
+    );
+
+    // If we're at the limit, wait until the oldest request is more than a minute old
+    if (
+      this.requestHistory.length >= this.rateLimitConfig.maxRequestsPerMinute
+    ) {
+      const oldestRequest = Math.min(...this.requestHistory);
+      return Math.max(1000, oldestRequest + 60000 - now);
+    }
+
+    // Otherwise wait the standard interval
+    return this.rateLimitConfig.requestInterval;
+  }
+
+  /**
+   * ADDED: Record a completed request
+   */
+  recordRequest() {
+    this.requestHistory.push(Date.now());
+  }
+
+  /**
+   * Make direct API request to LLM with improved error handling
+   */
+  async makeDirectRequest(messages, options = {}) {
     const requestBody = {
       model: options.model || CONFIG.getDefaultModel(),
       messages: messages,
@@ -261,19 +468,27 @@ class LLMService {
       }
     }
 
+    // ADDED: Request timeout
+    const timeoutMs = options.timeout || 60000; // 60 second timeout
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
+    requestOptions.signal = abortController.signal;
+
     try {
       if (CONFIG.DEBUG.ENABLED) {
-        console.log("Making LLM request:", {
+        console.log("🚀 Making LLM request:", {
           provider: CONFIG.getActiveAPIProvider(),
           url: this.apiUrl,
           model: requestBody.model,
           messageCount: messages.length,
           usingProxy: this.isUsingProxy(),
           temperature: requestBody.temperature,
+          timeout: timeoutMs,
         });
       }
 
       const response = await fetch(this.apiUrl, requestOptions);
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -311,7 +526,7 @@ class LLMService {
       const data = await response.json();
 
       if (CONFIG.DEBUG.ENABLED) {
-        console.log("LLM response received:", {
+        console.log("✅ LLM response received:", {
           provider: CONFIG.getActiveAPIProvider(),
           model: data.model,
           usage: data.usage,
@@ -326,9 +541,10 @@ class LLMService {
 
       return data;
     } catch (error) {
-      console.error("LLM request failed:", error);
+      clearTimeout(timeoutId);
+      console.error("❌ LLM request failed:", error);
 
-      if (error.message.includes("timeout")) {
+      if (error.name === "AbortError") {
         throw new Error(
           "AI request timed out. Please try again with simpler content."
         );
@@ -346,11 +562,15 @@ class LLMService {
    * Generate content chunks using XML tags for reliable extraction
    */
   async generateChunks(courseConfig) {
-    const maxRetries = 2;
+    const maxRetries = 3; // Increased retries
     let lastError;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        console.log(
+          `🎯 Starting chunk generation attempt ${attempt}/${maxRetries}`
+        );
+
         const systemPrompt = this.buildChunkingSystemPrompt();
         const userPrompt = this.buildChunkingUserPrompt(courseConfig);
 
@@ -383,16 +603,23 @@ class LLMService {
         console.log("Response content:", content);
         console.log("=== END FULL RESPONSE ===");
 
-        return this.parseChunkingResponseXML(content, attempt);
+        const chunks = this.parseChunkingResponseXML(content, attempt);
+        console.log(
+          `✅ Successfully generated ${chunks.length} chunks on attempt ${attempt}`
+        );
+        return chunks;
       } catch (error) {
         lastError = error;
-        console.warn(`Chunking attempt ${attempt} failed:`, error.message);
+        console.warn(`❌ Chunking attempt ${attempt} failed:`, error.message);
 
         if (attempt < maxRetries) {
+          const waitTime = 1000 * attempt * attempt; // Exponential backoff
           console.log(
-            `Retrying chunking (attempt ${attempt + 1}/${maxRetries})...`
+            `⏳ Retrying chunking in ${waitTime}ms (attempt ${
+              attempt + 1
+            }/${maxRetries})...`
           );
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
         }
       }
     }
@@ -403,47 +630,104 @@ class LLMService {
   }
 
   /**
-   * Generate content for a specific chunk using XML tags
+   * Generate content for a specific chunk using XML tags with enhanced error handling
    */
   async generateSlideContent(chunk, courseConfig) {
-    const systemPrompt = this.buildContentSystemPrompt();
-    const userPrompt = this.buildContentUserPrompt(chunk, courseConfig);
+    const maxRetries = 2;
+    let lastError;
 
-    const messages = [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ];
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(
+          `🎯 Generating content for chunk ${chunk.id}, attempt ${attempt}/${maxRetries}`
+        );
 
-    try {
-      const model = CONFIG.getModelForTask("content_generation");
+        const systemPrompt = this.buildContentSystemPrompt();
+        const userPrompt = this.buildContentUserPrompt(chunk, courseConfig);
 
-      const response = await this.makeRequest(messages, {
-        model: model,
-        temperature: 0.4,
-        maxTokens: 10000,
-      });
+        const messages = [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ];
 
-      if (!response.choices || response.choices.length === 0) {
-        throw new Error("No response choices received from AI");
+        const model = CONFIG.getModelForTask("content_generation");
+
+        const response = await this.makeRequest(messages, {
+          model: model,
+          temperature: 0.4,
+          maxTokens: 10000,
+        });
+
+        if (!response.choices || response.choices.length === 0) {
+          throw new Error("No response choices received from AI");
+        }
+
+        const content = response.choices[0].message.content;
+
+        // ALWAYS LOG CONTENT GENERATION RESPONSES
+        console.log("=== CONTENT GENERATION RESPONSE ===");
+        console.log("Provider:", CONFIG.getActiveAPIProvider());
+        console.log("Model:", model);
+        console.log("Chunk ID:", chunk.id);
+        console.log("Slide Type:", chunk.slideType);
+        console.log("Response length:", content.length);
+        console.log("Response content:", content);
+        console.log("=== END CONTENT RESPONSE ===");
+
+        const parsedContent = this.parseContentResponseXML(
+          content,
+          chunk.slideType
+        );
+        console.log(
+          `✅ Successfully generated content for chunk ${chunk.id} on attempt ${attempt}`
+        );
+        return parsedContent;
+      } catch (error) {
+        lastError = error;
+        console.error(
+          `❌ Content generation attempt ${attempt} failed for chunk ${chunk.id}:`,
+          error
+        );
+
+        if (attempt < maxRetries) {
+          const waitTime = 2000 * attempt; // Linear backoff for content generation
+          console.log(`⏳ Retrying content generation in ${waitTime}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
       }
-
-      const content = response.choices[0].message.content;
-
-      // ALWAYS LOG CONTENT GENERATION RESPONSES
-      console.log("=== CONTENT GENERATION RESPONSE ===");
-      console.log("Provider:", CONFIG.getActiveAPIProvider());
-      console.log("Model:", model);
-      console.log("Chunk ID:", chunk.id);
-      console.log("Slide Type:", chunk.slideType);
-      console.log("Response length:", content.length);
-      console.log("Response content:", content);
-      console.log("=== END CONTENT RESPONSE ===");
-
-      return this.parseContentResponseXML(content, chunk.slideType);
-    } catch (error) {
-      console.error("Content generation failed:", error);
-      throw new Error(`Content generation failed: ${error.message}`);
     }
+
+    throw new Error(
+      `Content generation failed after ${maxRetries} attempts: ${lastError.message}`
+    );
+  }
+
+  /**
+   * ADDED: Get queue status for debugging
+   */
+  getQueueStatus() {
+    return {
+      queueLength: this.requestQueue.length,
+      isProcessing: this.isProcessingQueue,
+      concurrentRequests: this.concurrentRequests,
+      requestsInLastMinute: this.requestHistory.filter(
+        (time) => Date.now() - time < 60000
+      ).length,
+      canMakeRequest: this.canMakeRequest(),
+      nextAvailableTime: this.canMakeRequest() ? 0 : this.getWaitTime(),
+    };
+  }
+
+  /**
+   * ADDED: Clear the request queue (for emergency stops)
+   */
+  clearQueue() {
+    const clearedCount = this.requestQueue.length;
+    this.requestQueue.forEach((request) => {
+      request.reject(new Error("Request cancelled: queue cleared"));
+    });
+    this.requestQueue = [];
+    console.log(`🗑️ Cleared ${clearedCount} requests from queue`);
   }
 
   /**

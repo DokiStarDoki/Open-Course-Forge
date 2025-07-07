@@ -1,14 +1,13 @@
 /**
- * Chunk Manager - Handles chunk operations and state management
+ * Chunk Manager - Handles chunk operations and state management (FIXED)
+ * Enhanced with proper LLM service integration and error handling
  */
 class ChunkManager {
   constructor(stateManager, eventSystem) {
     this.stateManager = stateManager;
     this.eventSystem = eventSystem;
     this.isProcessing = false;
-
-    // Initialize LLM service
-    this.llmService = new LLMService();
+    this.llmService = null; // Will be set by app initialization
 
     // Subscribe to events
     this.eventSystem.on("chunks:generate", this.generateChunks.bind(this));
@@ -16,9 +15,17 @@ class ChunkManager {
   }
 
   /**
-   * Generate chunks from course content
+   * ADDED: Set LLM service reference (called by app)
    */
-  async generateChunks(force = false) {
+  setLLMService(llmService) {
+    this.llmService = llmService;
+    console.log("✅ LLM service set in ChunkManager");
+  }
+
+  /**
+   * ENHANCED: Generate chunks from course content with better error handling
+   */
+  async generateChunks(courseConfig, force = false) {
     if (this.isProcessing && !force) {
       StatusManager.showWarning("Chunk generation already in progress");
       return;
@@ -26,10 +33,26 @@ class ChunkManager {
 
     try {
       this.isProcessing = true;
-      this.stateManager.setProcessingStatus(true);
+      this.stateManager.setProcessingStatus(
+        true,
+        "Generating content chunks..."
+      );
+
+      // Validate LLM service availability
+      if (!this.llmService) {
+        throw new Error(
+          "AI service not available. Please check your configuration."
+        );
+      }
+
+      // Ensure LLM service is ready
+      await this.llmService.ensureReady();
 
       // Get course configuration
-      const courseConfig = this.stateManager.getState("courseConfig");
+      if (!courseConfig) {
+        courseConfig = this.stateManager.getState("courseConfig");
+      }
+
       if (!courseConfig) {
         throw new Error("Course configuration not found");
       }
@@ -41,7 +64,7 @@ class ChunkManager {
       const existingChunks = this.stateManager.getState("chunks") || [];
       const lockedChunks = existingChunks.filter((chunk) => chunk.isLocked);
 
-      StatusManager.showInfo("Generating course chunks...");
+      StatusManager.showLoading("Analyzing content and generating chunks...");
 
       // Generate chunks using LLM
       const generatedChunks = await this.llmService.generateChunks(
@@ -62,15 +85,23 @@ class ChunkManager {
       this.eventSystem.emit("chunks:generated", {
         chunks: finalChunks,
         count: finalChunks.length,
+        generatedCount: generatedChunks.length,
+        lockedCount: lockedChunks.length,
       });
 
       StatusManager.showSuccess(
-        `Successfully generated ${generatedChunks.length} chunks!`
+        `Successfully generated ${generatedChunks.length} chunks!${
+          lockedChunks.length > 0
+            ? ` (${lockedChunks.length} locked chunks preserved)`
+            : ""
+        }`
       );
 
       if (CONFIG.DEBUG.ENABLED) {
         console.log("Chunks generated:", finalChunks);
       }
+
+      return finalChunks;
     } catch (error) {
       console.error("Chunk generation failed:", error);
       StatusManager.showError(`Chunk generation failed: ${error.message}`);
@@ -78,6 +109,8 @@ class ChunkManager {
       this.eventSystem.emit("chunks:generation-failed", {
         error: error.message,
       });
+
+      throw error; // Re-throw for caller handling
     } finally {
       this.isProcessing = false;
       this.stateManager.setProcessingStatus(false);
@@ -100,39 +133,59 @@ class ChunkManager {
       if (!confirmed) return;
     }
 
-    await this.generateChunks(true);
+    const courseConfig = this.stateManager.getState("courseConfig");
+    await this.generateChunks(courseConfig, true);
   }
 
   /**
-   * Validate course configuration
+   * ENHANCED: Validate course configuration with detailed feedback
    */
   validateCourseConfig(config) {
+    const errors = [];
+    const warnings = [];
+
     if (!config.title || config.title.trim().length < 3) {
-      throw new Error(
-        "Course title is required and must be at least 3 characters"
-      );
+      errors.push("Course title is required and must be at least 3 characters");
     }
 
     if (!config.learningObjectives || config.learningObjectives.length === 0) {
-      throw new Error("At least one learning objective is required");
+      errors.push("At least one learning objective is required");
     }
 
     if (!config.sourceContent || config.sourceContent.trim().length < 100) {
-      throw new Error("Source content is required and must be substantial");
+      errors.push("Source content is required and must be substantial");
     }
 
-    const wordCount = config.sourceContent.trim().split(/\s+/).length;
+    const wordCount = config.sourceContent
+      ? config.sourceContent.trim().split(/\s+/).length
+      : 0;
     if (wordCount > CONFIG.CONTENT.MAX_WORD_COUNT) {
-      throw new Error(
+      errors.push(
         `Content is too long (${wordCount} words). Maximum is ${CONFIG.CONTENT.MAX_WORD_COUNT} words.`
       );
+    }
+
+    if (wordCount < CONFIG.CONTENT.MIN_WORD_COUNT) {
+      warnings.push(
+        `Content is quite short (${wordCount} words). Consider adding more detail for better chunking.`
+      );
+    }
+
+    // Show warnings if any
+    if (warnings.length > 0 && CONFIG.DEBUG.ENABLED) {
+      console.warn("Course config warnings:", warnings);
+    }
+
+    // Throw error if validation fails
+    if (errors.length > 0) {
+      throw new Error(errors.join("; "));
     }
 
     return true;
   }
 
   /**
-   * Merge locked chunks with newly generated chunks
+   * ENHANCED: Merge locked chunks with newly generated chunks
    */
   mergeChunks(lockedChunks, newChunks) {
     const mergedChunks = [];
@@ -186,6 +239,9 @@ class ChunkManager {
       newChunkIndex++;
     }
 
+    console.log(
+      `🔄 Merged chunks: ${lockedChunks.length} locked + ${newChunks.length} new = ${mergedChunks.length} total`
+    );
     return mergedChunks;
   }
 
@@ -204,6 +260,7 @@ class ChunkManager {
       order: chunks.length,
       isLocked: false,
       generatedContent: null,
+      createdAt: new Date().toISOString(),
     };
 
     chunks.push(newChunk);
@@ -211,10 +268,12 @@ class ChunkManager {
 
     this.eventSystem.emit("chunk:added", { chunk: newChunk });
     StatusManager.showSuccess("New chunk added");
+
+    return newChunk;
   }
 
   /**
-   * Remove a chunk
+   * ENHANCED: Remove a chunk with better error handling
    */
   removeChunk(chunkId) {
     const chunks = this.stateManager.getState("chunks") || [];
@@ -232,7 +291,7 @@ class ChunkManager {
         availableIds: chunks.map((c) => c.id),
       });
       StatusManager.showError("Chunk not found");
-      return;
+      return false;
     }
 
     const chunk = chunks[chunkIndex];
@@ -244,7 +303,7 @@ class ChunkManager {
         : "This chunk has generated content. Are you sure you want to delete it?";
 
       if (!confirm(confirmMessage)) {
-        return;
+        return false;
       }
     }
 
@@ -264,6 +323,7 @@ class ChunkManager {
     });
 
     StatusManager.showSuccess("Chunk removed");
+    return true;
   }
 
   /**
@@ -276,7 +336,7 @@ class ChunkManager {
 
     if (!originalChunk) {
       StatusManager.showError("Chunk not found");
-      return;
+      return null;
     }
 
     // Create duplicate
@@ -287,6 +347,7 @@ class ChunkManager {
       order: chunks.length,
       isLocked: false, // Duplicated chunks are not locked by default
       generatedContent: null, // Don't copy generated content
+      createdAt: new Date().toISOString(),
     };
 
     chunks.push(duplicatedChunk);
@@ -298,6 +359,7 @@ class ChunkManager {
     });
 
     StatusManager.showSuccess("Chunk duplicated");
+    return duplicatedChunk;
   }
 
   /**
@@ -312,7 +374,7 @@ class ChunkManager {
 
     if (currentIndex <= 0) {
       StatusManager.showWarning("Chunk is already at the top");
-      return;
+      return false;
     }
 
     // Swap with previous chunk
@@ -332,6 +394,8 @@ class ChunkManager {
       chunkId: targetId,
       direction: "up",
     });
+
+    return true;
   }
 
   /**
@@ -346,7 +410,7 @@ class ChunkManager {
 
     if (currentIndex < 0 || currentIndex >= chunks.length - 1) {
       StatusManager.showWarning("Chunk is already at the bottom");
-      return;
+      return false;
     }
 
     // Swap with next chunk
@@ -366,6 +430,8 @@ class ChunkManager {
       chunkId: targetId,
       direction: "down",
     });
+
+    return true;
   }
 
   /**
@@ -378,7 +444,7 @@ class ChunkManager {
 
     if (!chunk) {
       StatusManager.showError("Chunk not found");
-      return;
+      return false;
     }
 
     chunk.isLocked = !chunk.isLocked;
@@ -392,6 +458,8 @@ class ChunkManager {
     StatusManager.showSuccess(
       chunk.isLocked ? "Chunk locked" : "Chunk unlocked"
     );
+
+    return true;
   }
 
   /**
@@ -404,12 +472,12 @@ class ChunkManager {
 
     if (!chunk) {
       StatusManager.showError("Chunk not found");
-      return;
+      return false;
     }
 
     if (chunk.isLocked) {
       StatusManager.showWarning("Cannot change type of locked chunk");
-      return;
+      return false;
     }
 
     const oldType = chunk.slideType;
@@ -430,6 +498,8 @@ class ChunkManager {
       oldType,
       newType,
     });
+
+    return true;
   }
 
   /**
@@ -442,7 +512,7 @@ class ChunkManager {
 
     if (!chunk) {
       StatusManager.showError("Chunk not found");
-      return;
+      return false;
     }
 
     chunk.title = newTitle.trim();
@@ -452,6 +522,8 @@ class ChunkManager {
       chunkId: targetId,
       title: newTitle,
     });
+
+    return true;
   }
 
   /**
@@ -464,7 +536,7 @@ class ChunkManager {
 
     if (!chunk) {
       StatusManager.showError("Chunk not found");
-      return;
+      return false;
     }
 
     chunk.sourceContent = newContent.trim();
@@ -474,6 +546,8 @@ class ChunkManager {
       chunkId: targetId,
       sourceContent: newContent,
     });
+
+    return true;
   }
 
   /**
@@ -486,7 +560,7 @@ class ChunkManager {
 
     if (!chunk) {
       StatusManager.showError("Chunk not found");
-      return;
+      return false;
     }
 
     chunk.groundTruth = newGroundTruth.trim();
@@ -496,6 +570,8 @@ class ChunkManager {
       chunkId: targetId,
       groundTruth: newGroundTruth,
     });
+
+    return true;
   }
 
   /**
@@ -515,7 +591,7 @@ class ChunkManager {
   }
 
   /**
-   * Get chunks summary
+   * ENHANCED: Get chunks summary with more detailed stats
    */
   getChunksSummary() {
     const chunks = this.getAllChunks();
@@ -526,9 +602,119 @@ class ChunkManager {
       withGroundTruth: chunks.filter(
         (c) => c.groundTruth && c.groundTruth.trim()
       ).length,
+      slideTypes: {},
+      estimatedTotalTime: 0,
     };
 
+    // Calculate slide type distribution
+    chunks.forEach((chunk) => {
+      summary.slideTypes[chunk.slideType] =
+        (summary.slideTypes[chunk.slideType] || 0) + 1;
+
+      // Calculate estimated time (convert "X minutes" to number)
+      const timeMatch = chunk.estimatedTime?.match(/(\d+)/);
+      if (timeMatch) {
+        summary.estimatedTotalTime += parseInt(timeMatch[1]);
+      }
+    });
+
     return summary;
+  }
+
+  /**
+   * ADDED: Get processing status
+   */
+  getProcessingStatus() {
+    return {
+      isProcessing: this.isProcessing,
+      hasLLMService: !!this.llmService,
+      llmServiceReady: this.llmService ? this.llmService.isReady : false,
+    };
+  }
+
+  /**
+   * ADDED: Bulk operations for chunks
+   */
+  bulkUpdateChunks(updates) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    let updatedCount = 0;
+
+    updates.forEach(({ chunkId, updates: chunkUpdates }) => {
+      const targetId = String(chunkId);
+      const chunkIndex = chunks.findIndex(
+        (chunk) => String(chunk.id) === targetId
+      );
+
+      if (chunkIndex >= 0) {
+        Object.assign(chunks[chunkIndex], chunkUpdates);
+        updatedCount++;
+      }
+    });
+
+    if (updatedCount > 0) {
+      this.stateManager.setState("chunks", chunks);
+      StatusManager.showSuccess(`Updated ${updatedCount} chunks`);
+    }
+
+    return updatedCount;
+  }
+
+  /**
+   * ADDED: Export chunks for backup/transfer
+   */
+  exportChunks() {
+    const chunks = this.getAllChunks();
+    const exportData = {
+      version: "1.0",
+      exportedAt: new Date().toISOString(),
+      chunks: chunks,
+      summary: this.getChunksSummary(),
+    };
+
+    return exportData;
+  }
+
+  /**
+   * ADDED: Import chunks from backup
+   */
+  importChunks(importData, options = { merge: false, preserveLocked: true }) {
+    if (!importData.chunks || !Array.isArray(importData.chunks)) {
+      throw new Error("Invalid import data: missing chunks array");
+    }
+
+    const existingChunks = this.stateManager.getState("chunks") || [];
+    let finalChunks;
+
+    if (options.merge) {
+      // Merge with existing chunks
+      const lockedChunks = options.preserveLocked
+        ? existingChunks.filter((chunk) => chunk.isLocked)
+        : [];
+
+      finalChunks = this.mergeChunks(lockedChunks, importData.chunks);
+    } else {
+      // Replace all chunks
+      finalChunks = importData.chunks.map((chunk, index) => ({
+        ...chunk,
+        order: index,
+      }));
+    }
+
+    this.stateManager.setState("chunks", finalChunks);
+
+    this.eventSystem.emit("chunks:imported", {
+      importedCount: importData.chunks.length,
+      totalCount: finalChunks.length,
+      merged: options.merge,
+    });
+
+    StatusManager.showSuccess(
+      `Imported ${importData.chunks.length} chunks ${
+        options.merge ? "(merged)" : "(replaced)"
+      }`
+    );
+
+    return finalChunks;
   }
 
   /**
@@ -538,6 +724,9 @@ class ChunkManager {
     this.eventSystem.off("chunks:generate", this.generateChunks);
     this.eventSystem.off("chunks:regenerate", this.regenerateChunks);
     this.isProcessing = false;
+    this.llmService = null;
+
+    console.log("ChunkManager cleaned up");
   }
 }
 

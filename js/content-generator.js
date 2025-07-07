@@ -1,6 +1,6 @@
 /**
- * Course Forge MVP - Content Generator
- * Handles content generation for slides using LLM service
+ * Course Forge MVP - Content Generator (FIXED BATCH OPERATIONS)
+ * Handles content generation for slides using LLM service with resilient batch processing
  */
 
 class ContentGenerator {
@@ -12,11 +12,15 @@ class ContentGenerator {
     // Track currently generating slides to prevent duplicates
     this.currentlyGenerating = new Set();
     this.batchOperationId = null;
+    this.batchProgress = null; // Track batch progress
+    this.retryQueue = new Map(); // Store failed items for retry
 
     this.setupEventListeners();
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log("ContentGenerator initialized");
+      console.log(
+        "ContentGenerator initialized with enhanced batch processing"
+      );
     }
   }
 
@@ -35,10 +39,14 @@ class ContentGenerator {
     this.eventSystem.on("content:generate-all", () => {
       this.generateAllContent();
     });
+
+    this.eventSystem.on("content:retry-failed", () => {
+      this.retryFailedGenerations();
+    });
   }
 
   /**
-   * Generate content for a specific slide
+   * ENHANCED: Generate content for a specific slide with better error handling
    */
   async generateSlideContent(chunkId) {
     if (this.currentlyGenerating.has(chunkId)) {
@@ -61,6 +69,13 @@ class ContentGenerator {
       if (chunk.isLocked) {
         throw new Error("Cannot generate content for locked chunk");
       }
+
+      // Validate LLM service
+      if (!this.llmService) {
+        throw new Error("AI service not available");
+      }
+
+      await this.llmService.ensureReady();
 
       StatusManager.showLoading(`Generating content for "${chunk.title}"...`);
 
@@ -85,6 +100,8 @@ class ContentGenerator {
         slideType: chunk.slideType,
         content: generatedContent,
       });
+
+      return generatedContent;
     } catch (error) {
       console.error(`Content generation failed for ${chunkId}:`, error);
       StatusManager.showError(`Generation failed: ${error.message}`);
@@ -93,6 +110,8 @@ class ContentGenerator {
         chunkId,
         error: error.message,
       });
+
+      throw error;
     } finally {
       this.currentlyGenerating.delete(chunkId);
     }
@@ -131,7 +150,7 @@ class ContentGenerator {
   }
 
   /**
-   * Generate content for all slides
+   * ENHANCED: Generate content for all slides with resilient batch processing
    */
   async generateAllContent() {
     const chunks = this.stateManager.getState("chunks") || [];
@@ -149,50 +168,124 @@ class ContentGenerator {
     );
     if (!confirmed) return;
 
-    // Start batch operation
+    // Start batch operation with enhanced tracking
     this.batchOperationId = `batch-${Date.now()}`;
+    this.batchProgress = {
+      total: pendingChunks.length,
+      completed: 0,
+      successful: 0,
+      failed: 0,
+      errors: [],
+      startTime: Date.now(),
+    };
+
     StatusManager.startBatchOperation(
       this.batchOperationId,
       `Generating content for ${pendingChunks.length} slides...`
     );
 
-    let successCount = 0;
-    let errorCount = 0;
-    const errors = [];
+    console.log(
+      `🚀 Starting batch generation for ${pendingChunks.length} slides`
+    );
 
-    for (let i = 0; i < pendingChunks.length; i++) {
-      const chunk = pendingChunks[i];
+    // Process slides in smaller batches to avoid overwhelming the API
+    const batchSize = 3; // Process 3 slides at a time
+    const batches = this.chunkArray(pendingChunks, batchSize);
 
-      try {
-        // Show progress
-        StatusManager.addBatchMessage(
-          this.batchOperationId,
-          `Generating "${chunk.title}" (${i + 1}/${pendingChunks.length})`,
-          `progress-${i}`
-        );
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      console.log(
+        `📦 Processing batch ${batchIndex + 1}/${batches.length} (${
+          batch.length
+        } slides)`
+      );
 
-        await this.generateSlideContent(chunk.id);
-        successCount++;
+      // Process slides in parallel within each batch
+      const batchPromises = batch.map(async (chunk, slideIndex) => {
+        const overallIndex = batchIndex * batchSize + slideIndex;
 
-        // Add delay between generations to avoid rate limiting
-        if (i < pendingChunks.length - 1) {
-          await this.delay(1000);
+        try {
+          // Show progress
+          const progressMessage = `Generating "${chunk.title}" (${
+            overallIndex + 1
+          }/${pendingChunks.length})`;
+          StatusManager.addBatchMessage(
+            this.batchOperationId,
+            progressMessage,
+            `progress-${overallIndex}`
+          );
+
+          await this.generateSlideContent(chunk.id);
+
+          this.batchProgress.successful++;
+          this.batchProgress.completed++;
+
+          console.log(
+            `✅ Generated content for "${chunk.title}" (${this.batchProgress.completed}/${this.batchProgress.total})`
+          );
+
+          return { success: true, chunk };
+        } catch (error) {
+          this.batchProgress.failed++;
+          this.batchProgress.completed++;
+          this.batchProgress.errors.push({
+            chunkId: chunk.id,
+            chunkTitle: chunk.title,
+            error: error.message,
+          });
+
+          // Add to retry queue for later
+          this.retryQueue.set(chunk.id, {
+            chunk,
+            error: error.message,
+            attempts: 1,
+            lastAttempt: Date.now(),
+          });
+
+          console.error(
+            `❌ Failed to generate content for "${chunk.title}":`,
+            error.message
+          );
+
+          return { success: false, chunk, error: error.message };
         }
-      } catch (error) {
-        errorCount++;
-        errors.push({
-          chunkTitle: chunk.title,
-          error: error.message,
-        });
-        console.error(`Failed to generate content for ${chunk.title}:`, error);
+      });
+
+      // Wait for current batch to complete
+      const batchResults = await Promise.allSettled(batchPromises);
+
+      // Add delay between batches to respect rate limits
+      if (batchIndex < batches.length - 1) {
+        const delayMs = 2000; // 2 second delay between batches
+        console.log(`⏳ Waiting ${delayMs}ms before next batch...`);
+        await this.delay(delayMs);
       }
     }
 
-    // Complete batch operation
-    const completionMessage = `Content generation complete! ${successCount} successful${
-      errorCount > 0 ? `, ${errorCount} failed` : ""
-    }`;
-    const completionType = errorCount > 0 ? "warning" : "success";
+    // Complete batch operation with comprehensive results
+    await this.completeBatchOperation();
+  }
+
+  /**
+   * ADDED: Complete batch operation with detailed reporting
+   */
+  async completeBatchOperation() {
+    const { total, successful, failed, errors, startTime } = this.batchProgress;
+    const duration = Math.round((Date.now() - startTime) / 1000);
+
+    // Create completion message
+    const completionMessages = [];
+    if (successful > 0) {
+      completionMessages.push(`✅ ${successful} slides generated successfully`);
+    }
+    if (failed > 0) {
+      completionMessages.push(`❌ ${failed} slides failed`);
+    }
+    completionMessages.push(`⏱️ Completed in ${duration} seconds`);
+
+    const completionMessage = completionMessages.join(" | ");
+    const completionType =
+      failed === 0 ? "success" : failed < total ? "warning" : "error";
 
     StatusManager.completeBatchOperation(
       this.batchOperationId,
@@ -200,17 +293,139 @@ class ContentGenerator {
       completionType
     );
 
-    // Log detailed errors if any
-    if (errors.length > 0) {
-      console.warn("Content generation errors:", errors);
+    // Show retry option if there were failures
+    if (failed > 0) {
+      setTimeout(() => {
+        StatusManager.showActionMessage(
+          `${failed} slides failed to generate. Click to retry failed slides.`,
+          "Retry Failed",
+          () => this.retryFailedGenerations(),
+          "warning"
+        );
+      }, 2000);
     }
 
+    // Emit detailed completion event
     this.eventSystem.emit("content:batch-generated", {
-      total: pendingChunks.length,
-      successful: successCount,
-      failed: errorCount,
-      errors: errors,
+      total,
+      successful,
+      failed,
+      errors,
+      duration,
+      retryQueueSize: this.retryQueue.size,
     });
+
+    // Log detailed results if debugging
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log("🏁 Batch generation complete:", {
+        total,
+        successful,
+        failed,
+        duration: `${duration}s`,
+        successRate: `${Math.round((successful / total) * 100)}%`,
+        errors: errors.map((e) => `${e.chunkTitle}: ${e.error}`),
+      });
+    }
+
+    // Clean up batch state
+    this.batchOperationId = null;
+    this.batchProgress = null;
+  }
+
+  /**
+   * ADDED: Retry failed generations
+   */
+  async retryFailedGenerations() {
+    if (this.retryQueue.size === 0) {
+      StatusManager.showInfo("No failed generations to retry");
+      return;
+    }
+
+    const failedItems = Array.from(this.retryQueue.entries());
+    const confirmed = confirm(
+      `Retry generating content for ${failedItems.length} failed slides?`
+    );
+    if (!confirmed) return;
+
+    StatusManager.showLoading(
+      `Retrying ${failedItems.length} failed generations...`
+    );
+
+    let retrySuccessful = 0;
+    let retryFailed = 0;
+
+    for (const [chunkId, retryData] of failedItems) {
+      try {
+        console.log(`🔄 Retrying generation for "${retryData.chunk.title}"`);
+
+        await this.generateSlideContent(chunkId);
+        this.retryQueue.delete(chunkId);
+        retrySuccessful++;
+
+        console.log(`✅ Retry successful for "${retryData.chunk.title}"`);
+      } catch (error) {
+        retryFailed++;
+        // Update retry data
+        retryData.attempts++;
+        retryData.lastAttempt = Date.now();
+        retryData.error = error.message;
+
+        console.error(
+          `❌ Retry failed for "${retryData.chunk.title}":`,
+          error.message
+        );
+      }
+
+      // Small delay between retries
+      await this.delay(1500);
+    }
+
+    const message = `Retry complete: ${retrySuccessful} successful, ${retryFailed} still failed`;
+    const type = retryFailed === 0 ? "success" : "warning";
+    StatusManager.show(message, type);
+
+    this.eventSystem.emit("content:retry-completed", {
+      attempted: failedItems.length,
+      successful: retrySuccessful,
+      failed: retryFailed,
+      remainingInQueue: this.retryQueue.size,
+    });
+  }
+
+  /**
+   * ADDED: Clear retry queue
+   */
+  clearRetryQueue() {
+    const clearedCount = this.retryQueue.size;
+    this.retryQueue.clear();
+
+    if (clearedCount > 0) {
+      StatusManager.showSuccess(
+        `Cleared ${clearedCount} items from retry queue`
+      );
+    }
+
+    return clearedCount;
+  }
+
+  /**
+   * ADDED: Get retry queue status
+   */
+  getRetryQueueStatus() {
+    const queueItems = Array.from(this.retryQueue.entries()).map(
+      ([chunkId, data]) => ({
+        chunkId,
+        chunkTitle: data.chunk.title,
+        attempts: data.attempts,
+        lastError: data.error,
+        timeSinceLastAttempt: Date.now() - data.lastAttempt,
+      })
+    );
+
+    return {
+      size: this.retryQueue.size,
+      items: queueItems,
+    };
   }
 
   /**
@@ -312,7 +527,7 @@ class ContentGenerator {
   }
 
   /**
-   * Get generation statistics
+   * ENHANCED: Get generation statistics with more details
    */
   getGenerationStats() {
     const chunks = this.stateManager.getState("chunks") || [];
@@ -328,6 +543,17 @@ class ContentGenerator {
       slideTypes: this.getSlideTypeStats(
         chunks.filter((chunk) => chunk.generatedContent)
       ),
+      batchInProgress: !!this.batchOperationId,
+      batchProgress: this.batchProgress,
+      retryQueueSize: this.retryQueue.size,
+      llmServiceStatus: this.llmService
+        ? {
+            isReady: this.llmService.isReady,
+            queueStatus: this.llmService.getQueueStatus
+              ? this.llmService.getQueueStatus()
+              : null,
+          }
+        : null,
     };
   }
 
@@ -390,6 +616,12 @@ class ContentGenerator {
           "warning"
         );
         this.batchOperationId = null;
+        this.batchProgress = null;
+      }
+
+      // Clear LLM service queue if available
+      if (this.llmService && this.llmService.clearQueue) {
+        this.llmService.clearQueue();
       }
 
       StatusManager.showWarning(
@@ -400,6 +632,17 @@ class ContentGenerator {
         cancelledChunks: cancelled,
       });
     }
+  }
+
+  /**
+   * ADDED: Utility method to chunk arrays into smaller batches
+   */
+  chunkArray(array, size) {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
   }
 
   /**
@@ -419,16 +662,20 @@ class ContentGenerator {
       generatingChunks: Array.from(this.currentlyGenerating),
       hasBatchOperation: !!this.batchOperationId,
       batchOperationId: this.batchOperationId,
+      batchProgress: this.batchProgress,
+      retryQueueSize: this.retryQueue.size,
     };
   }
 
   /**
-   * Cleanup resources
+   * ENHANCED: Cleanup resources with better state clearing
    */
   cleanup() {
     this.cancelAllGeneration();
     this.currentlyGenerating.clear();
+    this.retryQueue.clear();
     this.batchOperationId = null;
+    this.batchProgress = null;
 
     console.log("ContentGenerator cleaned up");
   }
