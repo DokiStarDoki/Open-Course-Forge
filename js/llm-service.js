@@ -1,7 +1,8 @@
 /**
- * Course Forge MVP - LLM Service (FIXED RACE CONDITIONS)
+ * Course Forge MVP - LLM Service (FIXED GROUND TRUTH PRESERVATION)
  * Handles communication with AI models using XML tags for reliable data extraction
  * UPDATED: Now supports both OpenRouter/DeepSeek and ChatGPT API based on config
+ * FIXED: Ground truth is preserved and used as foundation for content generation
  */
 
 class LLMService {
@@ -630,7 +631,7 @@ class LLMService {
   }
 
   /**
-   * Generate content for a specific chunk using XML tags with enhanced error handling
+   * FIXED: Generate content for a specific chunk - preserve existing ground truth
    */
   async generateSlideContent(chunk, courseConfig) {
     const maxRetries = 2;
@@ -670,6 +671,7 @@ class LLMService {
         console.log("Model:", model);
         console.log("Chunk ID:", chunk.id);
         console.log("Slide Type:", chunk.slideType);
+        console.log("Ground Truth:", chunk.groundTruth || "No ground truth");
         console.log("Response length:", content.length);
         console.log("Response content:", content);
         console.log("=== END CONTENT RESPONSE ===");
@@ -731,7 +733,7 @@ class LLMService {
   }
 
   /**
-   * Build system prompt for chunking using XML tags
+   * Build system prompt for chunking using XML tags - FIXED: Emphasize ground truth creation
    */
   buildChunkingSystemPrompt() {
     return `You are an expert instructional designer creating structured eLearning courses. Your task is to analyze source content and break it down into logical chunks for individual slides.
@@ -757,6 +759,7 @@ Guidelines:
 4. Ensure good flow and progression through the material
 5. Include interactive elements (faq, flipCards, multipleChoice) where appropriate
 6. Balance text-heavy and visual slides
+7. MOST IMPORTANT: Create detailed ground truth guidance for each chunk that will serve as the foundation for content generation
 
 Respond with your chunks wrapped in XML tags exactly like this:
 
@@ -765,17 +768,17 @@ Respond with your chunks wrapped in XML tags exactly like this:
 <title>Introduction to Course Topic</title>
 <slideType>title</slideType>
 <sourceContent>Relevant portion of source content for this chunk...</sourceContent>
-<groundTruth>A brief paragraph describing what this slide will cover and its purpose within the course.</groundTruth>
+<groundTruth>A detailed paragraph describing exactly what this slide should cover, its specific purpose within the course, what learners should understand after viewing it, and any specific points or examples that must be included. This ground truth will guide content generation and should be comprehensive.</groundTruth>
 </chunk>
 <chunk>
 <title>Key Concepts Overview</title>
 <slideType>textAndBullets</slideType>
 <sourceContent>Relevant portion of source content for this chunk...</sourceContent>
-<groundTruth>This slide will introduce the main concepts learners need to understand, providing a foundation for deeper topics.</groundTruth>
+<groundTruth>This slide will introduce the main concepts learners need to understand, providing a foundation for deeper topics. It should cover [specific concepts], explain [specific relationships], and prepare learners for [what comes next]. Include examples of [specific examples] and emphasize [key points].</groundTruth>
 </chunk>
 </chunks>
 
-Make sure each chunk has meaningful source content and ground truth guidance.`;
+Make sure each chunk has meaningful source content and detailed ground truth guidance that will serve as the foundation for content generation.`;
   }
 
   /**
@@ -798,14 +801,16 @@ ${
     : ""
 }
 
-Please create 6-12 chunks that cover this material comprehensively. Each chunk should have a clear title, appropriate slide type, and relevant source content.`;
+Please create 6-12 chunks that cover this material comprehensively. Each chunk should have a clear title, appropriate slide type, relevant source content, and DETAILED ground truth guidance that will serve as the foundation for content generation.`;
   }
 
   /**
-   * Build system prompt for content generation using XML tags
+   * FIXED: Build system prompt for content generation - emphasize using existing ground truth
    */
   buildContentSystemPrompt() {
     return `You are an expert instructional designer creating content for eLearning slides. You must use XML tags to structure your response.
+
+CRITICAL: You will be provided with existing ground truth guidance for this slide. Use this ground truth as the foundation for your content generation. DO NOT modify or ignore the ground truth - it defines exactly what this slide should cover.
 
 Use the XML format that matches the slide type:
 
@@ -941,12 +946,13 @@ Guidelines:
 - Audio scripts should be 15-30 seconds when read aloud
 - Make multiple choice questions scenario-based
 - Ensure content is concise and focused
+- MOST IMPORTANT: Base your content generation on the provided ground truth guidance - this defines what the slide should cover
 
-Remember: Use the XML format exactly as shown for the specific slide type.`;
+Remember: Use the XML format exactly as shown for the specific slide type and follow the ground truth guidance precisely.`;
   }
 
   /**
-   * Build user prompt for content generation
+   * FIXED: Build user prompt for content generation - emphasize using existing ground truth
    */
   buildContentUserPrompt(chunk, courseConfig) {
     return `Generate content for a "${chunk.slideType}" slide using XML tags.
@@ -961,8 +967,11 @@ COURSE CONTEXT:
 SOURCE CONTENT FOR THIS SLIDE:
 ${chunk.sourceContent}
 
-GROUND TRUTH GUIDANCE:
-${chunk.groundTruth || "No specific guidance provided."}
+GROUND TRUTH GUIDANCE (FOLLOW THIS PRECISELY):
+${
+  chunk.groundTruth ||
+  "No specific guidance provided - use source content to determine slide coverage."
+}
 
 ADDITIONAL GUIDANCE:
 ${
@@ -970,13 +979,19 @@ ${
   "Create engaging, practical content that helps learners achieve the objectives."
 }
 
+CRITICAL INSTRUCTIONS:
+1. Use the ground truth guidance as the foundation for your content generation
+2. Ensure the generated content covers exactly what the ground truth specifies
+3. Do not deviate from the ground truth requirements
+4. The ground truth defines what this slide should accomplish
+
 Please respond using the XML format specified for "${
       chunk.slideType
-    }" slides. Use the ground truth guidance to ensure the generated content aligns with the intended purpose and coverage of this slide.`;
+    }" slides. Make sure your generated content aligns precisely with the ground truth guidance provided above.`;
   }
 
   /**
-   * Parse chunking response using XML regex extraction
+   * Parse chunking response using XML regex extraction - FIXED: Include ground truth
    */
   parseChunkingResponseXML(content, attempt = 1) {
     try {
@@ -1004,7 +1019,7 @@ Please respond using the XML format specified for "${
             this.extractXMLValue(chunkBlock, "slideType") || "textAndImage",
           sourceContent:
             this.extractXMLValue(chunkBlock, "sourceContent") || "",
-          groundTruth: this.extractXMLValue(chunkBlock, "groundTruth") || "", // NEW
+          groundTruth: this.extractXMLValue(chunkBlock, "groundTruth") || "", // FIXED: Extract ground truth during chunking
           estimatedTime:
             this.extractXMLValue(chunkBlock, "estimatedTime") || "2 minutes",
           order: parseInt(this.extractXMLValue(chunkBlock, "order")) || index,
@@ -1028,7 +1043,7 @@ Please respond using the XML format specified for "${
           title: chunk.title,
           slideType: chunk.slideType,
           sourceContent: chunk.sourceContent,
-          groundTruth: chunk.groundTruth || "", // NEW FIELD
+          groundTruth: chunk.groundTruth || "", // FIXED: Preserve ground truth from chunking
           estimatedTime: chunk.estimatedTime,
           order: chunk.order,
           isLocked: false,
@@ -1260,7 +1275,7 @@ Please respond using the XML format specified for "${
   }
 
   /**
-   * Generate fallback chunks when parsing fails
+   * Generate fallback chunks when parsing fails - FIXED: Include ground truth
    */
   generateFallbackChunks(originalContent) {
     console.warn("🔄 Generating fallback chunks due to parsing failure");
@@ -1288,6 +1303,7 @@ Please respond using the XML format specified for "${
         slideType: index % 4 === 3 ? "multipleChoice" : "textAndImage",
         sourceContent:
           "Generated from parsing failure - manual editing required",
+        groundTruth: "Manual editing required - automatic parsing failed", // FIXED: Include ground truth in fallback
         estimatedTime: "2 minutes",
         order: index,
         isLocked: false,
@@ -1304,6 +1320,7 @@ Please respond using the XML format specified for "${
         title: "Course Introduction",
         slideType: "title",
         sourceContent: "Manual editing required - automatic parsing failed",
+        groundTruth: "Manual editing required - automatic parsing failed", // FIXED: Include ground truth
         estimatedTime: "2 minutes",
         order: 0,
         isLocked: false,
@@ -1315,6 +1332,7 @@ Please respond using the XML format specified for "${
         title: "Key Concepts",
         slideType: "textAndBullets",
         sourceContent: "Manual editing required - automatic parsing failed",
+        groundTruth: "Manual editing required - automatic parsing failed", // FIXED: Include ground truth
         estimatedTime: "3 minutes",
         order: 1,
         isLocked: false,

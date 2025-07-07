@@ -1,6 +1,6 @@
 /**
  * Generation UI Controller - Manages content generation display and interactions
- * FIXED: Generate All button visibility, loading notifications, and copy content functionality
+ * FIXED: Single event binding for Generate All button and removed confirmation dialogs
  */
 class GenerationUIController {
   constructor(stateManager, eventSystem) {
@@ -9,6 +9,7 @@ class GenerationUIController {
     this.contentGenerator = null; // Will be set later
     this.autoSaveTimeouts = {};
     this.editingSession = new Map();
+    this.eventListenersAttached = false; // FIXED: Track if event listeners are attached
 
     this.bindEvents();
   }
@@ -54,22 +55,39 @@ class GenerationUIController {
   }
 
   /**
-   * Setup DOM event listeners
+   * FIXED: Setup DOM event listeners with proper single binding
    */
   setupEventListeners() {
-    // FIXED: Generate all button - ensure proper event binding and visibility
+    // FIXED: Prevent duplicate event listeners
+    if (this.eventListenersAttached) {
+      console.log("Event listeners already attached, skipping");
+      return;
+    }
+
+    // FIXED: Generate all button - ensure single event binding
     const generateAllBtn = document.getElementById("generateAllBtn");
     if (generateAllBtn) {
-      // Remove any existing listeners to prevent duplicates
-      generateAllBtn.removeEventListener("click", this.generateAllContent);
-      generateAllBtn.addEventListener("click", () => {
-        console.log("Generate All button clicked");
-        this.generateAllContent();
-      });
+      // FIXED: Remove any existing listeners first
+      const newButton = generateAllBtn.cloneNode(true);
+      generateAllBtn.parentNode.replaceChild(newButton, generateAllBtn);
+
+      // Add single event listener
+      newButton.addEventListener(
+        "click",
+        (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log("Generate All button clicked - single handler");
+          this.generateAllContent();
+        },
+        { once: false }
+      );
 
       // FIXED: Ensure button is visible
-      generateAllBtn.style.display = "inline-flex";
-      generateAllBtn.disabled = false;
+      newButton.style.display = "inline-flex";
+      newButton.disabled = false;
+
+      console.log("✅ Generate All button event listener attached");
     } else {
       console.warn("Generate All button not found in DOM");
     }
@@ -77,7 +95,9 @@ class GenerationUIController {
     // Generate selected button
     const generateSelectedBtn = document.getElementById("generateSelectedBtn");
     if (generateSelectedBtn) {
-      generateSelectedBtn.addEventListener("click", () => {
+      generateSelectedBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         this.generateSelected();
       });
     }
@@ -120,6 +140,10 @@ class GenerationUIController {
         this.closeAllDropdowns();
       }
     });
+
+    // FIXED: Mark event listeners as attached
+    this.eventListenersAttached = true;
+    console.log("✅ All generation UI event listeners attached");
   }
 
   /**
@@ -183,11 +207,21 @@ class GenerationUIController {
     if (pendingChunks.length > 0) {
       generateAllBtn.style.display = "inline-flex";
       generateAllBtn.disabled = false;
-      generateAllBtn.textContent = `Generate All (${pendingChunks.length})`;
+
+      // Update button text to show count
+      const textSpan = generateAllBtn.querySelector("span");
+      if (textSpan) {
+        textSpan.textContent = `Generate All (${pendingChunks.length})`;
+      }
     } else {
       generateAllBtn.style.display = "inline-flex";
       generateAllBtn.disabled = true;
-      generateAllBtn.textContent = "All Generated";
+
+      // Update button text
+      const textSpan = generateAllBtn.querySelector("span");
+      if (textSpan) {
+        textSpan.textContent = "All Generated";
+      }
     }
   }
 
@@ -981,7 +1015,7 @@ class GenerationUIController {
   }
 
   /**
-   * Regenerate content for specific chunk
+   * FIXED: Regenerate content for specific chunk - removed confirmation
    */
   async regenerateChunkContent(chunkId) {
     if (!this.contentGenerator) {
@@ -989,11 +1023,12 @@ class GenerationUIController {
       return;
     }
 
+    // FIXED: Direct regeneration without confirmation
     await this.contentGenerator.regenerateSlideContent(chunkId);
   }
 
   /**
-   * FIXED: Generate all content with proper error handling
+   * FIXED: Generate all content with proper error handling - no confirmation
    */
   async generateAllContent() {
     console.log("GenerationUIController.generateAllContent called");
@@ -1006,6 +1041,7 @@ class GenerationUIController {
 
     console.log("Calling contentGenerator.generateAllContent...");
     try {
+      // FIXED: Direct call without confirmation
       await this.contentGenerator.generateAllContent();
     } catch (error) {
       console.error("Generate all content failed:", error);

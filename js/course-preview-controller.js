@@ -2,6 +2,7 @@
  * Course Forge MVP - Course Preview Controller (FIXED VERSION)
  * This should REPLACE the existing course-preview-controller.js file
  * Handles course preview functionality with Rise 360-style vertical scrolling
+ * FIXED: Flip card interactions now work properly in preview
  */
 
 class CoursePreviewController {
@@ -431,6 +432,7 @@ class CoursePreviewController {
         font-weight: 700;
         margin-bottom: 1.5rem;
         text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        line-height: 1.1;
       }
 
       .course-metadata {
@@ -460,7 +462,7 @@ class CoursePreviewController {
 
       .learning-objectives h3 {
         font-size: 1.5rem;
-        margin-bottom: 1rem;
+        margin-bottom: 1.5rem;
         text-align: center;
       }
 
@@ -475,7 +477,7 @@ class CoursePreviewController {
         display: flex;
         align-items: center;
         gap: 0.75rem;
-        padding: 0.5rem 0;
+        padding: 0.75rem 0;
         font-size: 1.1rem;
       }
 
@@ -777,7 +779,7 @@ class CoursePreviewController {
         line-height: 1.6;
       }
 
-      /* Flip Cards */
+      /* Flip Cards - FIXED STYLES */
       .cards-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -1225,7 +1227,7 @@ class CoursePreviewController {
   }
 
   /**
-   * Get JavaScript for vertical scroll functionality
+   * FIXED: Get JavaScript for vertical scroll functionality with improved flip card handling
    */
   getVerticalScrollScript(totalSections) {
     return `
@@ -1430,7 +1432,7 @@ class CoursePreviewController {
         });
       }
 
-      // Interactive functionality from main app
+      // FIXED: Interactive functionality from main app with improved flip card handling
       function switchTab(button, index) {
         const container = button.closest('.tabs-container');
         const buttons = container.querySelectorAll('.tab-button');
@@ -1463,8 +1465,20 @@ class CoursePreviewController {
         }
       }
       
-      function flipCard(card) {
-        card.classList.toggle('flipped');
+      // FIXED: Flip card function with better element handling
+      function flipCard(element) {
+        // Find the flip-card element if we're not already on it
+        let card = element;
+        if (!card.classList.contains('flip-card')) {
+          card = element.closest('.flip-card');
+        }
+        
+        if (card && card.classList.contains('flip-card')) {
+          console.log("Flip card toggled");
+          card.classList.toggle('flipped');
+        } else {
+          console.warn("Flip card called on invalid element:", element);
+        }
       }
       
       function selectOption(element, selectedIndex, correctIndex) {

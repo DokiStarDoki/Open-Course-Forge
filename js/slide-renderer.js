@@ -1,6 +1,7 @@
 /**
- * Course Forge MVP - Slide Content Renderer
+ * Course Forge MVP - Slide Content Renderer (FIXED FLIP CARDS)
  * Renders different slide types with their generated content
+ * FIXED: Flip card context issue resolved
  */
 
 class SlideRenderer {
@@ -8,9 +9,28 @@ class SlideRenderer {
     this.renderers = new Map();
     this.initializeRenderers();
 
+    // FIXED: Attach global functions for flip cards and other interactions
+    this.attachGlobalFunctions();
+
     if (CONFIG.DEBUG.ENABLED) {
-      console.log("SlideRenderer initialized");
+      console.log("SlideRenderer initialized with global functions");
     }
+  }
+
+  /**
+   * FIXED: Attach global functions for slide interactions
+   */
+  attachGlobalFunctions() {
+    // Make flip card functions globally available
+    window.flipCard = this.flipCard.bind(this);
+    window.selectOption = this.selectOption.bind(this);
+    window.switchTab = this.switchTab.bind(this);
+    window.toggleFaq = this.toggleFaq.bind(this);
+    window.openPopup = this.openPopup.bind(this);
+    window.closePopup = this.closePopup.bind(this);
+    window.addBulletPoint = this.addBulletPoint.bind(this);
+
+    console.log("✅ Global slide interaction functions attached");
   }
 
   /**
@@ -18,7 +38,7 @@ class SlideRenderer {
    */
   initializeRenderers() {
     this.renderers.set("title", this.renderTitle.bind(this));
-    this.renderers.set("courseInfo", this.renderCourseInfo.bind(this)); // ← FIXED: Added missing courseInfo renderer
+    this.renderers.set("courseInfo", this.renderCourseInfo.bind(this));
     this.renderers.set("textAndImage", this.renderTextAndImage.bind(this));
     this.renderers.set("textAndBullets", this.renderTextAndBullets.bind(this));
     this.renderers.set(
@@ -79,7 +99,7 @@ class SlideRenderer {
   }
 
   /**
-   * Render course info slide - FIXED: Added missing method
+   * Render course info slide
    */
   renderCourseInfo(chunk, isEditable) {
     const content = chunk.generatedContent;
@@ -213,7 +233,7 @@ class SlideRenderer {
               .join("")}
             ${
               isEditable
-                ? '<li class="add-bullet" onclick="slideRenderer.addBulletPoint(this)">+ Add bullet point</li>'
+                ? '<li class="add-bullet" onclick="addBulletPoint(this)">+ Add bullet point</li>'
                 : ""
             }
           </ul>
@@ -297,7 +317,7 @@ class SlideRenderer {
               <div class="option-item ${
                 index === content.correctAnswer ? "correct-answer" : ""
               }" 
-                   onclick="slideRenderer.selectOption(this, ${index}, ${
+                   onclick="selectOption(this, ${index}, ${
                   content.correctAnswer
                 })">
                 <div class="option-label">${String.fromCharCode(
@@ -341,7 +361,7 @@ class SlideRenderer {
                 .map(
                   (tab, index) => `
                 <button class="tab-button ${index === 0 ? "active" : ""}" 
-                        onclick="slideRenderer.switchTab(this, ${index})" ${
+                        onclick="switchTab(this, ${index})" ${
                     isEditable ? 'contenteditable="true"' : ""
                   } 
                         data-field="tabs.${index}.title">${this.escapeHtml(
@@ -374,7 +394,7 @@ class SlideRenderer {
   }
 
   /**
-   * Render flip cards slide
+   * FIXED: Render flip cards slide with proper event handling
    */
   renderFlipCards(chunk, isEditable) {
     const content = chunk.generatedContent;
@@ -389,7 +409,7 @@ class SlideRenderer {
             ${(content || [])
               .map(
                 (card, index) => `
-              <div class="flip-card" onclick="slideRenderer.flipCard(this)">
+              <div class="flip-card" onclick="window.flipCard && window.flipCard(this)">
                 <div class="flip-card-inner">
                   <div class="flip-card-front">
                     <div class="card-content" ${
@@ -438,7 +458,7 @@ class SlideRenderer {
               .map(
                 (item, index) => `
               <div class="faq-item">
-                <div class="faq-question" onclick="slideRenderer.toggleFaq(this)">
+                <div class="faq-question" onclick="toggleFaq(this)">
                   <span class="question-text" ${
                     isEditable ? 'contenteditable="true"' : ""
                   } 
@@ -482,7 +502,7 @@ class SlideRenderer {
             ${(content || [])
               .map(
                 (popup, index) => `
-              <div class="popup-trigger" onclick="slideRenderer.openPopup(this, ${index})">
+              <div class="popup-trigger" onclick="openPopup(this, ${index})">
                 <i data-lucide="info" class="popup-icon"></i>
                 <span class="popup-title" ${
                   isEditable ? 'contenteditable="true"' : ""
@@ -492,11 +512,11 @@ class SlideRenderer {
                 )}</span>
               </div>
               
-              <div id="popup-${index}" class="popup-overlay" onclick="slideRenderer.closePopup(${index})">
+              <div id="popup-${index}" class="popup-overlay" onclick="closePopup(${index})">
                 <div class="popup-content" onclick="event.stopPropagation()">
                   <div class="popup-header">
                     <h3>${this.escapeHtml(popup.title || "")}</h3>
-                    <button onclick="slideRenderer.closePopup(${index})" class="popup-close">×</button>
+                    <button onclick="closePopup(${index})" class="popup-close">×</button>
                   </div>
                   <div class="popup-body" ${
                     isEditable ? 'contenteditable="true"' : ""
@@ -597,7 +617,7 @@ class SlideRenderer {
   }
 
   /**
-   * Interactive methods for slide functionality
+   * FIXED: Interactive methods for slide functionality - global functions
    */
 
   selectOption(element, selectedIndex, correctIndex) {
@@ -640,8 +660,22 @@ class SlideRenderer {
     panels[index].classList.add("active");
   }
 
-  flipCard(card) {
-    card.classList.toggle("flipped");
+  /**
+   * FIXED: Flip card function - now globally available with better error handling
+   */
+  flipCard(element) {
+    // Find the flip-card element if we're not already on it
+    let card = element;
+    if (!card.classList.contains("flip-card")) {
+      card = element.closest(".flip-card");
+    }
+
+    if (card && card.classList.contains("flip-card")) {
+      console.log("Flip card called on:", card);
+      card.classList.toggle("flipped");
+    } else {
+      console.warn("Flip card called on invalid element:", element);
+    }
   }
 
   toggleFaq(question) {
@@ -653,10 +687,10 @@ class SlideRenderer {
 
     if (item.classList.contains("open")) {
       answer.style.display = "block";
-      icon.style.transform = "rotate(180deg)";
+      if (icon) icon.style.transform = "rotate(180deg)";
     } else {
       answer.style.display = "none";
-      icon.style.transform = "rotate(0deg)";
+      if (icon) icon.style.transform = "rotate(0deg)";
     }
   }
 
@@ -700,6 +734,134 @@ class SlideRenderer {
       CONFIG.SLIDE_TYPES.map((type) => [type.value, type.label])
     );
     return slideTypeMap.get(slideType) || slideType;
+  }
+
+  /**
+   * FIXED: Get global interaction functions for export
+   */
+  getGlobalFunctions() {
+    return {
+      flipCard: this.flipCard.bind(this),
+      selectOption: this.selectOption.bind(this),
+      switchTab: this.switchTab.bind(this),
+      toggleFaq: this.toggleFaq.bind(this),
+      openPopup: this.openPopup.bind(this),
+      closePopup: this.closePopup.bind(this),
+      addBulletPoint: this.addBulletPoint.bind(this),
+    };
+  }
+
+  /**
+   * FIXED: Get JavaScript code for slide interactions (for export) with better flip card handling
+   */
+  getInteractionScripts() {
+    return `
+      // Global slide interaction functions
+      function flipCard(element) {
+        // Find the flip-card element if we're not already on it
+        let card = element;
+        if (!card.classList.contains('flip-card')) {
+          card = element.closest('.flip-card');
+        }
+        
+        if (card && card.classList.contains('flip-card')) {
+          console.log("Flip card called");
+          card.classList.toggle("flipped");
+        } else {
+          console.warn("Flip card called on invalid element:", element);
+        }
+      }
+
+      function selectOption(element, selectedIndex, correctIndex) {
+        const container = element.closest(".multiple-choice");
+        const options = container.querySelectorAll(".option-item");
+        const feedback = container.querySelector(".feedback");
+        const feedbackText = feedback ? feedback.querySelector(".feedback-text") : null;
+
+        // Clear previous selections
+        options.forEach(opt => opt.classList.remove("selected", "correct", "incorrect"));
+        element.classList.add("selected");
+
+        if (selectedIndex === correctIndex) {
+          element.classList.add("correct");
+          if (feedbackText) {
+            feedbackText.textContent = "Correct! Well done.";
+            feedbackText.className = "feedback-text correct";
+          }
+        } else {
+          element.classList.add("incorrect");
+          if (options[correctIndex]) {
+            options[correctIndex].classList.add("correct");
+          }
+          if (feedbackText) {
+            feedbackText.textContent = "Not quite right. The correct answer is highlighted.";
+            feedbackText.className = "feedback-text incorrect";
+          }
+        }
+
+        if (feedback) {
+          feedback.style.display = "block";
+        }
+      }
+
+      function switchTab(button, index) {
+        const container = button.closest(".tabs");
+        const buttons = container.querySelectorAll(".tab-button");
+        const panels = container.querySelectorAll(".tab-panel");
+
+        buttons.forEach(btn => btn.classList.remove("active"));
+        panels.forEach(panel => panel.classList.remove("active"));
+
+        button.classList.add("active");
+        if (panels[index]) {
+          panels[index].classList.add("active");
+        }
+      }
+
+      function toggleFaq(question) {
+        const item = question.parentElement;
+        const answer = item.querySelector(".faq-answer");
+        const icon = question.querySelector(".faq-icon");
+
+        item.classList.toggle("open");
+
+        if (item.classList.contains("open")) {
+          if (answer) answer.style.display = "block";
+          if (icon) icon.style.transform = "rotate(180deg)";
+        } else {
+          if (answer) answer.style.display = "none";
+          if (icon) icon.style.transform = "rotate(0deg)";
+        }
+      }
+
+      function openPopup(trigger, index) {
+        const popup = document.getElementById('popup-' + index);
+        if (popup) {
+          popup.style.display = "flex";
+          document.body.style.overflow = "hidden";
+        }
+      }
+
+      function closePopup(index) {
+        const popup = document.getElementById('popup-' + index);
+        if (popup) {
+          popup.style.display = "none";
+          document.body.style.overflow = "auto";
+        }
+      }
+
+      function addBulletPoint(element) {
+        const newBullet = document.createElement("li");
+        newBullet.className = "bullet-item";
+        newBullet.contentEditable = true;
+        newBullet.textContent = "New bullet point";
+
+        element.parentElement.insertBefore(newBullet, element);
+        newBullet.focus();
+      }
+
+      console.log("✅ Slide interaction functions loaded");
+    `;
   }
 }
 

@@ -1,5 +1,5 @@
 /**
- * Course Forge MVP - Content Generator (FIXED LOADING STATES)
+ * Course Forge MVP - Content Generator (FIXED CONFIRMATION & GROUND TRUTH)
  * Handles content generation for slides using LLM service with proper status cleanup
  */
 
@@ -94,6 +94,7 @@ class ContentGenerator {
       if (chunkIndex >= 0) {
         chunks[chunkIndex].generatedContent = generatedContent;
         chunks[chunkIndex].lastGenerated = new Date().toISOString();
+        // FIXED: Preserve ground truth - don't overwrite it during content generation
         this.stateManager.setState("chunks", chunks);
       }
 
@@ -143,15 +144,14 @@ class ContentGenerator {
       return;
     }
 
-    const confirmed = confirm(
-      `Regenerate content for "${chunk.title}"? This will replace the existing content.`
-    );
-    if (!confirmed) return;
+    // FIXED: Removed confirmation dialog - just regenerate directly
+    console.log(`Regenerating content for "${chunk.title}"`);
 
-    // Clear existing content and regenerate
+    // Clear existing content and regenerate (but preserve ground truth)
     const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
     if (chunkIndex >= 0) {
       chunks[chunkIndex].generatedContent = null;
+      // FIXED: Keep ground truth intact during regeneration
       this.stateManager.setState("chunks", chunks);
     }
 
@@ -159,7 +159,7 @@ class ContentGenerator {
   }
 
   /**
-   * ENHANCED: Generate content for all slides with resilient batch processing
+   * FIXED: Generate content for all slides - removed confirmation dialog
    */
   async generateAllContent() {
     const chunks = this.stateManager.getState("chunks") || [];
@@ -172,10 +172,8 @@ class ContentGenerator {
       return;
     }
 
-    const confirmed = confirm(
-      `Generate content for ${pendingChunks.length} slides? This may take several minutes.`
-    );
-    if (!confirmed) return;
+    // FIXED: Removed confirmation dialog - start generation immediately
+    console.log(`Starting generation for ${pendingChunks.length} slides`);
 
     // Start batch operation with enhanced tracking
     this.batchOperationId = `batch-${Date.now()}`;
@@ -352,10 +350,7 @@ class ContentGenerator {
     }
 
     const failedItems = Array.from(this.retryQueue.entries());
-    const confirmed = confirm(
-      `Retry generating content for ${failedItems.length} failed slides?`
-    );
-    if (!confirmed) return;
+    console.log(`Retrying ${failedItems.length} failed generations...`);
 
     StatusManager.showLoading(
       `Retrying ${failedItems.length} failed generations...`
@@ -461,9 +456,10 @@ class ContentGenerator {
     try {
       StatusManager.showLoading(`Changing slide type to ${newSlideType}...`);
 
-      // Update slide type and clear content
+      // Update slide type and clear content (but preserve ground truth)
       chunks[chunkIndex].slideType = newSlideType;
       chunks[chunkIndex].generatedContent = null;
+      // FIXED: Keep ground truth intact
       this.stateManager.setState("chunks", chunks);
 
       // Regenerate content with new type

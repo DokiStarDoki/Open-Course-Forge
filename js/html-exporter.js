@@ -1,6 +1,7 @@
 /**
  * Course Forge MVP - HTML Exporter (UPDATED FOR VERTICAL SCROLL)
  * Handles exporting courses to standalone HTML files with Rise 360-style vertical scrolling
+ * FIXED: Flip card interactions now work properly in exported HTML
  */
 
 class HTMLExporter {
@@ -364,7 +365,7 @@ class HTMLExporter {
               ${content
                 .map(
                   (card, index) => `
-                  <div class="flip-card" onclick="flipCard(this)">
+                  <div class="flip-card" onclick="window.flipCard && window.flipCard(this)">
                     <div class="flip-card-inner">
                       <div class="flip-card-front">
                         <div class="card-content">${this.escapeHtml(
@@ -1148,7 +1149,7 @@ class HTMLExporter {
         font-size: 1.05rem;
       }
 
-      /* Flip Cards */
+      /* FIXED: Flip Cards - Enhanced styles for proper export functionality */
       .cards-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -1684,7 +1685,7 @@ class HTMLExporter {
   }
 
   /**
-   * Get JavaScript for exported course functionality
+   * FIXED: Get JavaScript for exported course functionality with improved flip card handling
    */
   getCourseExportScript(totalSections) {
     return `
@@ -1892,7 +1893,7 @@ class HTMLExporter {
         });
       }
 
-      // Interactive functionality
+      // FIXED: Interactive functionality with improved flip card handling
       function switchTab(button, index) {
         const container = button.closest('.tabs-container');
         const buttons = container.querySelectorAll('.tab-button');
@@ -1921,9 +1922,24 @@ class HTMLExporter {
         }
       }
       
-      function flipCard(card) {
-        card.classList.toggle('flipped');
+      // FIXED: Flip card function with better element handling for exports
+      function flipCard(element) {
+        // Find the flip-card element if we're not already on it
+        let card = element;
+        if (!card.classList.contains('flip-card')) {
+          card = element.closest('.flip-card');
+        }
+        
+        if (card && card.classList.contains('flip-card')) {
+          console.log("Flip card toggled in export");
+          card.classList.toggle('flipped');
+        } else {
+          console.warn("Flip card called on invalid element:", element);
+        }
       }
+
+      // Make flipCard available globally for onclick handlers
+      window.flipCard = flipCard;
       
       function selectOption(element, selectedIndex, correctIndex) {
         const container = element.closest('.options-container');
