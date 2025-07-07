@@ -156,11 +156,9 @@ class CourseForgeApp {
     }
 
     // Double-check fileUploadController assignment
-    if (!window.fileUploadController) {
-      console.warn(
-        "fileUploadController not assigned, attempting manual assignment..."
-      );
+    if (!window.fileUploadController && this.fileUploadController) {
       window.fileUploadController = this.fileUploadController;
+      console.log("Manually assigned fileUploadController to global scope");
     }
   }
 
@@ -240,7 +238,7 @@ class CourseForgeApp {
         id: "loadCourseBtn",
         handler: () => this.triggerCourseLoad(),
       },
-      // FIXED: Add generate all button handler
+      // FIXED: Generate all button - ensure it's properly handled here as backup
       {
         id: "generateAllBtn",
         handler: () => this.generateAllContent(),
@@ -257,15 +255,24 @@ class CourseForgeApp {
   }
 
   /**
-   * FIXED: Generate all content method
+   * FIXED: Generate all content method with better error handling
    */
   async generateAllContent() {
+    console.log("App.generateAllContent called");
+
     if (!this.contentGenerator) {
+      console.error("Content generator not initialized");
       StatusManager.showError("Content generator not initialized");
       return;
     }
 
-    await this.contentGenerator.generateAllContent();
+    try {
+      console.log("Calling contentGenerator.generateAllContent...");
+      await this.contentGenerator.generateAllContent();
+    } catch (error) {
+      console.error("Generate all content failed in app:", error);
+      StatusManager.showError(`Generate all failed: ${error.message}`);
+    }
   }
 
   /**
@@ -810,6 +817,14 @@ class CourseForgeApp {
         coursePreview: this.coursePreviewController,
         chunkUI: this.chunkUIController,
         generationUI: this.generationUIController,
+      },
+      // FIXED: Add status manager debugging
+      statusManager: {
+        isShowing: StatusManager.isShowing(),
+        isProcessingBatch: StatusManager.isProcessingBatch(),
+        currentBatchId: StatusManager.getCurrentBatchId(),
+        queueLength: StatusManager.getQueueLength(),
+        debugInfo: StatusManager.getDebugInfo(),
       },
     };
 

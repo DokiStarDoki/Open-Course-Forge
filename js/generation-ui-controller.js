@@ -50,10 +50,13 @@ class GenerationUIController {
    * Setup DOM event listeners
    */
   setupEventListeners() {
-    // Generate all button
+    // Generate all button - FIXED: Ensure proper event binding
     const generateAllBtn = document.getElementById("generateAllBtn");
     if (generateAllBtn) {
+      // Remove any existing listeners to prevent duplicates
+      generateAllBtn.removeEventListener("click", this.generateAllContent);
       generateAllBtn.addEventListener("click", () => {
+        console.log("Generate All button clicked");
         this.generateAllContent();
       });
     }
@@ -96,6 +99,14 @@ class GenerationUIController {
         this.clearFilters();
       });
     }
+
+    // FIXED: Global click handler for dropdown management
+    document.addEventListener("click", (e) => {
+      // Close all dropdowns if click is outside
+      if (!e.target.closest(".generation-actions-dropdown")) {
+        this.closeAllDropdowns();
+      }
+    });
   }
 
   /**
@@ -193,7 +204,7 @@ class GenerationUIController {
           </div>
           <div class="generation-actions">
             <button class="btn btn-primary generation-btn" 
-                    onclick="generationUIController.${
+                    onclick="window.generationUIController.${
                       hasContent
                         ? "regenerateChunkContent"
                         : "generateChunkContent"
@@ -213,29 +224,30 @@ class GenerationUIController {
             </button>
             <div class="generation-actions-dropdown">
               <button class="btn btn-secondary btn-sm dropdown-toggle" 
-                      onclick="generationUIController.toggleGenerationActions('${
+                      onclick="window.generationUIController.toggleGenerationActions('${
                         chunk.id
-                      }', this)">
+                      }', this)"
+                      type="button">
                 <i data-lucide="more-horizontal"></i>
               </button>
               <div class="dropdown-menu" id="gen-actions-${chunk.id}">
-                <button onclick="generationUIController.copySlideContent('${
+                <button onclick="window.generationUIController.copySlideContent('${
                   chunk.id
                 }')" ${!hasContent ? "disabled" : ""}>
                   <i data-lucide="copy"></i> Copy Content
                 </button>
-                <button onclick="generationUIController.copySlideTranscript('${
+                <button onclick="window.generationUIController.copySlideTranscript('${
                   chunk.id
                 }')" ${!hasContent ? "disabled" : ""}>
                   <i data-lucide="volume-2"></i> Copy Transcript
                 </button>
-                <button onclick="generationUIController.previewSlide('${
+                <button onclick="window.generationUIController.previewSlide('${
                   chunk.id
                 }')" ${!hasContent ? "disabled" : ""}>
                   <i data-lucide="eye"></i> Preview Slide
                 </button>
                 <hr>
-                <button onclick="generationUIController.resetSlideContent('${
+                <button onclick="window.generationUIController.resetSlideContent('${
                   chunk.id
                 }')" ${!hasContent ? "disabled" : ""}>
                   <i data-lucide="rotate-ccw"></i> Reset Content
@@ -297,8 +309,8 @@ class GenerationUIController {
              contenteditable="true"
              data-chunk-id="${chunk.id}"
              data-field="groundTruth"
-             onblur="generationUIController.saveInlineEdit(this)"
-             onkeydown="generationUIController.handleInlineEditKeydown(event, this)"
+             onblur="window.generationUIController.saveInlineEdit(this)"
+             onkeydown="window.generationUIController.handleInlineEditKeydown(event, this)"
              placeholder="Describe what this slide should cover and its purpose..."
              style="${isExpanded ? "" : "max-height: 3rem; overflow: hidden;"}">
           ${this.escapeHtml(chunk.groundTruth || "")}
@@ -530,33 +542,50 @@ class GenerationUIController {
   }
 
   /**
-   * Toggle generation actions dropdown
+   * FIXED: Toggle generation actions dropdown with proper event handling
    */
   toggleGenerationActions(chunkId, button) {
-    const dropdown = document.getElementById(`gen-actions-${chunkId}`);
-    if (!dropdown) return;
+    console.log("Toggle generation actions called", chunkId);
 
-    // Close other dropdowns
-    document.querySelectorAll(".dropdown-menu").forEach((menu) => {
-      if (menu !== dropdown) {
-        menu.classList.remove("show");
-      }
+    const dropdown = document.getElementById(`gen-actions-${chunkId}`);
+    if (!dropdown) {
+      console.error("Dropdown not found:", `gen-actions-${chunkId}`);
+      return;
+    }
+
+    // Close other dropdowns first
+    this.closeAllDropdowns();
+
+    // Toggle this dropdown
+    const isCurrentlyOpen = dropdown.classList.contains("show");
+
+    if (!isCurrentlyOpen) {
+      dropdown.classList.add("show");
+      button.setAttribute("aria-expanded", "true");
+
+      console.log("Dropdown opened for chunk:", chunkId);
+    }
+
+    // Prevent event bubbling
+    if (window.event) {
+      window.event.stopPropagation();
+    }
+  }
+
+  /**
+   * FIXED: Close all dropdowns properly
+   */
+  closeAllDropdowns() {
+    const dropdowns = document.querySelectorAll(".dropdown-menu");
+    const buttons = document.querySelectorAll(".dropdown-toggle");
+
+    dropdowns.forEach((dropdown) => {
+      dropdown.classList.remove("show");
     });
 
-    dropdown.classList.toggle("show");
-
-    if (dropdown.classList.contains("show")) {
-      const closeHandler = (e) => {
-        if (!button.contains(e.target) && !dropdown.contains(e.target)) {
-          dropdown.classList.remove("show");
-          document.removeEventListener("click", closeHandler);
-        }
-      };
-
-      setTimeout(() => {
-        document.addEventListener("click", closeHandler);
-      }, 0);
-    }
+    buttons.forEach((button) => {
+      button.setAttribute("aria-expanded", "false");
+    });
   }
 
   /**
@@ -826,15 +855,24 @@ class GenerationUIController {
   }
 
   /**
-   * Generate all content
+   * FIXED: Generate all content with proper error handling
    */
   async generateAllContent() {
+    console.log("GenerationUIController.generateAllContent called");
+
     if (!this.contentGenerator) {
+      console.error("Content generator not initialized");
       StatusManager.showError("Content generator not initialized");
       return;
     }
 
-    await this.contentGenerator.generateAllContent();
+    console.log("Calling contentGenerator.generateAllContent...");
+    try {
+      await this.contentGenerator.generateAllContent();
+    } catch (error) {
+      console.error("Generate all content failed:", error);
+      StatusManager.showError(`Generate all failed: ${error.message}`);
+    }
   }
 
   /**

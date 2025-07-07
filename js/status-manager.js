@@ -9,12 +9,15 @@ class StatusManager {
     this.currentTimeout = null;
     this.messageQueue = [];
     this.isShowing = false;
-    this.isProcessingBatch = false; // NEW: Track batch operations
-    this.batchOperationId = null; // NEW: Track current batch ID
-    this.pendingMessages = new Map(); // NEW: Track pending async messages
+    this.isProcessingBatch = false;
+    this.batchOperationId = null;
+    this.pendingMessages = new Map();
+    this.operationStates = new Map(); // FIXED: Track operation states to prevent race conditions
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log("StatusManager initialized with race condition prevention");
+      console.log(
+        "StatusManager initialized with enhanced race condition prevention"
+      );
     }
   }
 
@@ -111,7 +114,7 @@ class StatusManager {
   }
 
   /**
-   * NEW: Start a batch operation (like generating multiple slides)
+   * FIXED: Start a batch operation with proper state tracking
    * @param {string} batchId - Unique identifier for this batch
    * @param {string} initialMessage - Initial message to show
    */
@@ -123,17 +126,35 @@ class StatusManager {
     const instance = StatusManager.instance;
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log(`Starting batch operation: ${batchId}`);
+      console.log(`🚀 Starting batch operation: ${batchId}`);
+    }
+
+    // FIXED: Mark any previous operation as cancelled to prevent race conditions
+    if (instance.batchOperationId && instance.batchOperationId !== batchId) {
+      console.log(
+        `🛑 Cancelling previous operation: ${instance.batchOperationId}`
+      );
+      instance.operationStates.set(instance.batchOperationId, {
+        status: "cancelled",
+        cancelledAt: Date.now(),
+      });
     }
 
     // Clear any existing messages
     instance.clearQueue();
     instance.hideMessage();
 
-    // Set batch state
+    // Set batch state with proper tracking
     instance.isProcessingBatch = true;
     instance.batchOperationId = batchId;
     instance.pendingMessages.clear();
+
+    // FIXED: Track operation state
+    instance.operationStates.set(batchId, {
+      status: "active",
+      startedAt: Date.now(),
+      messageCount: 0,
+    });
 
     // Show initial message
     this.showLoading(initialMessage, {
@@ -143,7 +164,7 @@ class StatusManager {
   }
 
   /**
-   * NEW: Add a message to a batch operation
+   * FIXED: Add a message to a batch operation with race condition prevention
    * @param {string} batchId - Batch identifier
    * @param {string} message - Message to show
    * @param {string} messageId - Unique message identifier
@@ -155,15 +176,32 @@ class StatusManager {
 
     const instance = StatusManager.instance;
 
-    // Only process if this is the current batch
-    if (instance.batchOperationId !== batchId) {
+    // FIXED: Check if operation is still valid
+    const operationState = instance.operationStates.get(batchId);
+    if (!operationState || operationState.status !== "active") {
       if (CONFIG.DEBUG.ENABLED) {
         console.warn(
-          `Ignoring message for old batch: ${batchId}, current: ${instance.batchOperationId}`
+          `🚫 Ignoring message for ${
+            operationState ? operationState.status : "unknown"
+          } operation: ${batchId}`
         );
       }
       return;
     }
+
+    // Only process if this is the current batch
+    if (instance.batchOperationId !== batchId) {
+      if (CONFIG.DEBUG.ENABLED) {
+        console.warn(
+          `🚫 Ignoring message for old batch: ${batchId}, current: ${instance.batchOperationId}`
+        );
+      }
+      return;
+    }
+
+    // Update operation state
+    operationState.messageCount++;
+    operationState.lastMessageAt = Date.now();
 
     // Add to pending messages
     instance.pendingMessages.set(messageId, {
@@ -181,7 +219,7 @@ class StatusManager {
   }
 
   /**
-   * NEW: Complete a batch operation
+   * FIXED: Complete a batch operation with proper state management
    * @param {string} batchId - Batch identifier
    * @param {string} completionMessage - Final message to show
    * @param {string} type - Message type (success, error, etc.)
@@ -194,22 +232,63 @@ class StatusManager {
     const instance = StatusManager.instance;
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log(`Completing batch operation: ${batchId}`);
-      console.log(`Pending messages: ${instance.pendingMessages.size}`);
+      console.log(`🏁 Completing batch operation: ${batchId}`);
+    }
+
+    // FIXED: Validate operation state
+    const operationState = instance.operationStates.get(batchId);
+    if (!operationState) {
+      console.warn(`⚠️ No operation state found for batch: ${batchId}`);
+      return;
+    }
+
+    if (operationState.status !== "active") {
+      console.warn(
+        `⚠️ Operation ${batchId} is ${operationState.status}, ignoring completion`
+      );
+      return;
     }
 
     // Only process if this is the current batch
     if (instance.batchOperationId !== batchId) {
       if (CONFIG.DEBUG.ENABLED) {
         console.warn(
-          `Ignoring completion for old batch: ${batchId}, current: ${instance.batchOperationId}`
+          `🚫 Ignoring completion for old batch: ${batchId}, current: ${instance.batchOperationId}`
         );
       }
       return;
     }
 
-    // Wait for any pending messages to finish, then show completion
+    // FIXED: Mark operation as completing to prevent new messages
+    operationState.status = "completing";
+    operationState.completedAt = Date.now();
+
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log(`📊 Operation stats:`, {
+        duration: operationState.completedAt - operationState.startedAt,
+        messageCount: operationState.messageCount,
+        pendingMessages: instance.pendingMessages.size,
+      });
+    }
+
+    // FIXED: Use a more reliable completion delay based on pending messages
+    const completionDelay = Math.max(
+      200,
+      Math.min(instance.pendingMessages.size * 50, 500)
+    );
+
     setTimeout(() => {
+      // Double-check that this operation is still the current one
+      if (instance.batchOperationId !== batchId) {
+        console.warn(
+          `🚫 Operation changed during completion delay: ${batchId} -> ${instance.batchOperationId}`
+        );
+        return;
+      }
+
+      // Mark as completed
+      operationState.status = "completed";
+
       // Clear batch state
       instance.isProcessingBatch = false;
       instance.batchOperationId = null;
@@ -221,11 +300,22 @@ class StatusManager {
 
       // Show completion message after a brief delay
       setTimeout(() => {
-        this.show(completionMessage, type, CONFIG.UI.STATUS_MESSAGE_DURATION, {
-          priority: "batch-completion",
-        });
-      }, 200);
-    }, 300); // Wait 300ms for any racing messages to complete
+        // Final check that no new operation has started
+        if (!instance.isProcessingBatch) {
+          this.show(
+            completionMessage,
+            type,
+            CONFIG.UI.STATUS_MESSAGE_DURATION,
+            {
+              priority: "batch-completion",
+            }
+          );
+        }
+      }, 100);
+
+      // FIXED: Clean up old operation states (keep last 5)
+      instance.cleanupOperationStates();
+    }, completionDelay);
   }
 
   /**
@@ -247,7 +337,7 @@ class StatusManager {
   }
 
   /**
-   * Instance method to show a message with improved logic
+   * FIXED: Instance method to show a message with improved race condition handling
    * @param {string} message - Message to display
    * @param {string} type - Message type
    * @param {number} duration - Duration in milliseconds
@@ -263,12 +353,13 @@ class StatusManager {
     };
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log(`Status message request:`, {
+      console.log(`📨 Status message request:`, {
         message: message.substring(0, 50) + (message.length > 50 ? "..." : ""),
         type,
         batchId: options.batchId,
         priority: options.priority,
         isProcessingBatch: this.isProcessingBatch,
+        currentBatch: this.batchOperationId,
       });
     }
 
@@ -289,12 +380,27 @@ class StatusManager {
       return;
     }
 
-    // For batch operations, handle sequencing
+    // FIXED: Enhanced batch operation validation
     if (this.isProcessingBatch && options.batchId) {
+      // Check operation state
+      const operationState = this.operationStates.get(options.batchId);
+      if (!operationState || operationState.status !== "active") {
+        if (CONFIG.DEBUG.ENABLED) {
+          console.log(
+            `🚫 Ignoring message from ${
+              operationState ? operationState.status : "unknown"
+            } operation: ${options.batchId}`
+          );
+        }
+        return;
+      }
+
       if (options.batchId !== this.batchOperationId) {
         // Ignore messages from old batch operations
         if (CONFIG.DEBUG.ENABLED) {
-          console.log(`Ignoring message from old batch: ${options.batchId}`);
+          console.log(
+            `🚫 Ignoring message from old batch: ${options.batchId} (current: ${this.batchOperationId})`
+          );
         }
         return;
       }
@@ -349,7 +455,7 @@ class StatusManager {
 
     // Log message if debugging
     if (CONFIG.DEBUG.ENABLED) {
-      console.log(`Status displayed (${type}):`, message.substring(0, 100));
+      console.log(`📢 Status displayed (${type}):`, message.substring(0, 100));
     }
   }
 
@@ -388,7 +494,7 @@ class StatusManager {
   }
 
   /**
-   * Hide the current message with improved queue processing
+   * FIXED: Hide the current message with improved queue processing
    */
   hideMessage() {
     if (!this.statusBar) return;
@@ -408,13 +514,23 @@ class StatusManager {
       if (this.messageQueue.length > 0) {
         const nextMessage = this.messageQueue.shift();
 
-        // Double-check batch operation validity
+        // FIXED: Enhanced batch operation validity check
         if (nextMessage.options && nextMessage.options.batchId) {
-          if (nextMessage.options.batchId !== this.batchOperationId) {
-            // Skip this message, it's from an old batch
+          const operationState = this.operationStates.get(
+            nextMessage.options.batchId
+          );
+
+          if (
+            !operationState ||
+            operationState.status !== "active" ||
+            nextMessage.options.batchId !== this.batchOperationId
+          ) {
+            // Skip this message, it's from an old or inactive batch
             if (CONFIG.DEBUG.ENABLED) {
               console.log(
-                `Skipping queued message from old batch: ${nextMessage.options.batchId}`
+                `🚫 Skipping queued message from ${
+                  operationState ? operationState.status : "unknown"
+                } batch: ${nextMessage.options.batchId}`
               );
             }
             this.hideMessage(); // Process next message
@@ -431,10 +547,41 @@ class StatusManager {
    * Clear all queued messages
    */
   clearQueue() {
+    const queueLength = this.messageQueue.length;
     this.messageQueue = [];
 
-    if (CONFIG.DEBUG.ENABLED && this.messageQueue.length > 0) {
-      console.log(`Cleared ${this.messageQueue.length} queued messages`);
+    if (CONFIG.DEBUG.ENABLED && queueLength > 0) {
+      console.log(`🗑️ Cleared ${queueLength} queued messages`);
+    }
+  }
+
+  /**
+   * FIXED: Clean up old operation states to prevent memory leaks
+   */
+  cleanupOperationStates() {
+    const states = Array.from(this.operationStates.entries());
+
+    // Sort by completion time and keep only the last 5
+    const sortedStates = states
+      .filter(
+        ([id, state]) =>
+          state.status === "completed" || state.status === "cancelled"
+      )
+      .sort(
+        ([, a], [, b]) =>
+          (b.completedAt || b.cancelledAt || 0) -
+          (a.completedAt || a.cancelledAt || 0)
+      );
+
+    if (sortedStates.length > 5) {
+      const toRemove = sortedStates.slice(5);
+      toRemove.forEach(([id]) => {
+        this.operationStates.delete(id);
+      });
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(`🧹 Cleaned up ${toRemove.length} old operation states`);
+      }
     }
   }
 
@@ -670,7 +817,7 @@ class StatusManager {
   }
 
   /**
-   * NEW: Check if currently processing a batch operation
+   * FIXED: Check if currently processing a batch operation
    * @returns {boolean} True if processing batch
    */
   static isProcessingBatch() {
@@ -680,13 +827,81 @@ class StatusManager {
   }
 
   /**
-   * NEW: Get current batch operation ID
+   * FIXED: Get current batch operation ID
    * @returns {string|null} Current batch ID or null
    */
   static getCurrentBatchId() {
     return StatusManager.instance
       ? StatusManager.instance.batchOperationId
       : null;
+  }
+
+  /**
+   * FIXED: Get operation state for debugging
+   * @param {string} batchId - Batch ID to check
+   * @returns {Object|null} Operation state or null
+   */
+  static getOperationState(batchId) {
+    return StatusManager.instance &&
+      StatusManager.instance.operationStates.has(batchId)
+      ? StatusManager.instance.operationStates.get(batchId)
+      : null;
+  }
+
+  /**
+   * FIXED: Cancel a specific batch operation
+   * @param {string} batchId - Batch ID to cancel
+   */
+  static cancelBatchOperation(batchId) {
+    if (!StatusManager.instance) return;
+
+    const instance = StatusManager.instance;
+    const operationState = instance.operationStates.get(batchId);
+
+    if (operationState && operationState.status === "active") {
+      operationState.status = "cancelled";
+      operationState.cancelledAt = Date.now();
+
+      if (instance.batchOperationId === batchId) {
+        instance.isProcessingBatch = false;
+        instance.batchOperationId = null;
+        instance.pendingMessages.clear();
+        instance.clearQueue();
+        instance.hideMessage();
+      }
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(`🛑 Cancelled batch operation: ${batchId}`);
+      }
+    }
+  }
+
+  /**
+   * FIXED: Get debug information about current state
+   * @returns {Object} Debug information
+   */
+  static getDebugInfo() {
+    if (!StatusManager.instance) return null;
+
+    const instance = StatusManager.instance;
+    const operationStates = {};
+
+    instance.operationStates.forEach((state, id) => {
+      operationStates[id] = {
+        ...state,
+        age: Date.now() - state.startedAt,
+      };
+    });
+
+    return {
+      isShowing: instance.isShowing,
+      isProcessingBatch: instance.isProcessingBatch,
+      currentBatchId: instance.batchOperationId,
+      queueLength: instance.messageQueue.length,
+      pendingMessages: instance.pendingMessages.size,
+      operationStates: operationStates,
+      statusBarExists: !!instance.statusBar,
+    };
   }
 }
 
