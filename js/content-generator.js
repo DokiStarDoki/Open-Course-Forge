@@ -1,6 +1,6 @@
 /**
- * Course Forge MVP - Content Generator (FIXED BATCH OPERATIONS)
- * Handles content generation for slides using LLM service with resilient batch processing
+ * Course Forge MVP - Content Generator (FIXED LOADING STATES)
+ * Handles content generation for slides using LLM service with proper status cleanup
  */
 
 class ContentGenerator {
@@ -77,7 +77,11 @@ class ContentGenerator {
 
       await this.llmService.ensureReady();
 
-      StatusManager.showLoading(`Generating content for "${chunk.title}"...`);
+      // FIXED: Show loading with chunk-specific identifier
+      StatusManager.showLoading(`Generating content for "${chunk.title}"...`, {
+        chunkId: chunkId,
+        priority: "high",
+      });
 
       const courseConfig = this.stateManager.getState("courseConfig");
       const generatedContent = await this.llmService.generateSlideContent(
@@ -93,6 +97,8 @@ class ContentGenerator {
         this.stateManager.setState("chunks", chunks);
       }
 
+      // FIXED: Clear loading state immediately after success
+      StatusManager.hide();
       StatusManager.showSuccess(`Content generated for "${chunk.title}"`);
 
       this.eventSystem.emit("content:generated", {
@@ -104,6 +110,9 @@ class ContentGenerator {
       return generatedContent;
     } catch (error) {
       console.error(`Content generation failed for ${chunkId}:`, error);
+
+      // FIXED: Clear loading state on error too
+      StatusManager.hide();
       StatusManager.showError(`Generation failed: ${error.message}`);
 
       this.eventSystem.emit("content:generation-failed", {
@@ -267,7 +276,7 @@ class ContentGenerator {
   }
 
   /**
-   * ADDED: Complete batch operation with detailed reporting
+   * FIXED: Complete batch operation with proper status cleanup
    */
   async completeBatchOperation() {
     const { total, successful, failed, errors, startTime } = this.batchProgress;
@@ -287,6 +296,7 @@ class ContentGenerator {
     const completionType =
       failed === 0 ? "success" : failed < total ? "warning" : "error";
 
+    // FIXED: Ensure proper batch completion
     StatusManager.completeBatchOperation(
       this.batchOperationId,
       completionMessage,

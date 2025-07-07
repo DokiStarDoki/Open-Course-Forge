@@ -1,5 +1,6 @@
 /**
  * Generation UI Controller - Manages content generation display and interactions
+ * FIXED: Generate All button visibility, loading notifications, and copy content functionality
  */
 class GenerationUIController {
   constructor(stateManager, eventSystem) {
@@ -44,13 +45,19 @@ class GenerationUIController {
       this.handleGenerationFailed.bind(this)
     );
     this.eventSystem.on("content:reset", this.handleContentReset.bind(this));
+
+    // FIXED: Add batch completion listener to clear loading states
+    this.eventSystem.on(
+      "content:batch-generated",
+      this.handleBatchCompleted.bind(this)
+    );
   }
 
   /**
    * Setup DOM event listeners
    */
   setupEventListeners() {
-    // Generate all button - FIXED: Ensure proper event binding
+    // FIXED: Generate all button - ensure proper event binding and visibility
     const generateAllBtn = document.getElementById("generateAllBtn");
     if (generateAllBtn) {
       // Remove any existing listeners to prevent duplicates
@@ -59,6 +66,12 @@ class GenerationUIController {
         console.log("Generate All button clicked");
         this.generateAllContent();
       });
+
+      // FIXED: Ensure button is visible
+      generateAllBtn.style.display = "inline-flex";
+      generateAllBtn.disabled = false;
+    } else {
+      console.warn("Generate All button not found in DOM");
     }
 
     // Generate selected button
@@ -150,6 +163,32 @@ class GenerationUIController {
 
     // Setup interactions
     this.setupGenerationInteractions();
+
+    // FIXED: Update Generate All button state
+    this.updateGenerateAllButton(chunks);
+  }
+
+  /**
+   * FIXED: Update Generate All button visibility and state
+   */
+  updateGenerateAllButton(chunks) {
+    const generateAllBtn = document.getElementById("generateAllBtn");
+    if (!generateAllBtn) return;
+
+    const pendingChunks = chunks.filter(
+      (chunk) => !chunk.generatedContent && !chunk.isLocked
+    );
+
+    // Show/hide button based on pending chunks
+    if (pendingChunks.length > 0) {
+      generateAllBtn.style.display = "inline-flex";
+      generateAllBtn.disabled = false;
+      generateAllBtn.textContent = `Generate All (${pendingChunks.length})`;
+    } else {
+      generateAllBtn.style.display = "inline-flex";
+      generateAllBtn.disabled = true;
+      generateAllBtn.textContent = "All Generated";
+    }
   }
 
   /**
@@ -589,7 +628,7 @@ class GenerationUIController {
   }
 
   /**
-   * Copy slide content to clipboard
+   * FIXED: Copy slide content to clipboard - only text content in plain text format
    */
   async copySlideContent(chunkId) {
     const chunk = this.getChunkById(chunkId);
@@ -599,9 +638,115 @@ class GenerationUIController {
     }
 
     try {
-      const content = JSON.stringify(chunk.generatedContent, null, 2);
-      await navigator.clipboard.writeText(content);
-      StatusManager.showSuccess("Content copied to clipboard");
+      const content = chunk.generatedContent;
+      let textContent = "";
+
+      // Extract only text content based on slide type, excluding audio script
+      switch (chunk.slideType) {
+        case "title":
+          textContent = `${content.header || ""}\n\n${content.text || ""}`;
+          break;
+
+        case "courseInfo":
+          textContent = `${content.header || ""}\n\n${content.text || ""}`;
+          if (content.duration) {
+            textContent += `\n\nDuration: ${content.duration}`;
+          }
+          if (content.audience) {
+            textContent += `\nTarget Audience: ${content.audience}`;
+          }
+          if (content.objectives && content.objectives.length > 0) {
+            textContent += "\n\nLearning Objectives:\n";
+            content.objectives.forEach((obj) => {
+              textContent += `• ${obj}\n`;
+            });
+          }
+          break;
+
+        case "textAndImage":
+          textContent = `${content.header || ""}\n\n${content.text || ""}`;
+          break;
+
+        case "textAndBullets":
+          textContent = `${content.header || ""}\n\n${content.text || ""}`;
+          if (content.bullets && content.bullets.length > 0) {
+            textContent += "\n\n";
+            content.bullets.forEach((bullet) => {
+              textContent += `• ${bullet}\n`;
+            });
+          }
+          break;
+
+        case "iconsWithTitles":
+          textContent = `${content.header || ""}`;
+          if (content.icons && content.icons.length > 0) {
+            textContent += "\n\n";
+            content.icons.forEach((icon) => {
+              textContent += `${icon.title}\n${icon.description}\n\n`;
+            });
+          }
+          break;
+
+        case "multipleChoice":
+          textContent = `${content.question || ""}\n\n`;
+          if (content.options && content.options.length > 0) {
+            content.options.forEach((option, index) => {
+              const letter = String.fromCharCode(65 + index);
+              const marker =
+                index === content.correctAnswer ? `${letter}) ✓` : `${letter})`;
+              textContent += `${marker} ${option}\n`;
+            });
+          }
+          break;
+
+        case "tabs":
+          if (Array.isArray(content)) {
+            content.forEach((tab) => {
+              textContent += `${tab.title}\n${tab.content}\n\n`;
+            });
+          }
+          break;
+
+        case "flipCards":
+          if (Array.isArray(content)) {
+            content.forEach((card) => {
+              textContent += `${card.front}: ${card.back}\n\n`;
+            });
+          }
+          break;
+
+        case "faq":
+          textContent = `${content.header || ""}\n\n`;
+          if (content.items && content.items.length > 0) {
+            content.items.forEach((item) => {
+              textContent += `Q: ${item.question}\nA: ${item.answer}\n\n`;
+            });
+          }
+          break;
+
+        case "popups":
+          if (Array.isArray(content)) {
+            content.forEach((popup) => {
+              textContent += `${popup.title}\n${popup.content}\n\n`;
+            });
+          }
+          break;
+
+        default:
+          // Fallback for unknown slide types
+          textContent = JSON.stringify(content, null, 2);
+      }
+
+      // Clean up the text content
+      textContent = textContent.trim();
+
+      if (!textContent) {
+        StatusManager.showWarning("No text content found to copy");
+        return;
+      }
+
+      await navigator.clipboard.writeText(textContent);
+      StatusManager.showSuccess("Text content copied to clipboard");
     } catch (error) {
       console.error("Failed to copy content:", error);
       StatusManager.showError("Failed to copy content");
@@ -697,16 +842,16 @@ class GenerationUIController {
         break;
 
       case "tabs":
-        if (Array.isArray(content.tabs)) {
-          content.tabs.forEach((tab) => {
+        if (Array.isArray(content)) {
+          content.forEach((tab) => {
             transcript += `${tab.title}\n${tab.content}\n\n`;
           });
         }
         break;
 
       case "flipCards":
-        if (Array.isArray(content.cards)) {
-          content.cards.forEach((card) => {
+        if (Array.isArray(content)) {
+          content.forEach((card) => {
             transcript += `${card.front}: ${card.back}\n`;
           });
         }
@@ -722,8 +867,8 @@ class GenerationUIController {
         break;
 
       case "popups":
-        if (Array.isArray(content.popups)) {
-          content.popups.forEach((popup) => {
+        if (Array.isArray(content)) {
+          content.forEach((popup) => {
             transcript += `${popup.title}\n${popup.content}\n\n`;
           });
         }
@@ -819,15 +964,8 @@ class GenerationUIController {
    * Setup generation interactions
    */
   setupGenerationInteractions() {
-    // Auto-refresh progress for processing items
-    const processingItems = document.querySelectorAll(
-      ".generation-item.processing"
-    );
-    if (processingItems.length > 0) {
-      setTimeout(() => {
-        this.updateGenerationUI();
-      }, 2000);
-    }
+    // FIXED: Don't auto-refresh progress for processing items to prevent flickering
+    // The UI will be updated through event handlers instead
   }
 
   /**
@@ -913,7 +1051,7 @@ class GenerationUIController {
   }
 
   /**
-   * Handle content generated event
+   * FIXED: Handle content generated event with proper UI updates
    */
   handleContentGenerated(data) {
     const { chunkId } = data;
@@ -923,9 +1061,18 @@ class GenerationUIController {
       item.classList.remove("processing", "pending");
       item.classList.add("has-content");
       item.dataset.generationStatus = "generated";
+
+      // FIXED: Remove the processing indicator
+      const progressElement = item.querySelector(`#progress-${chunkId}`);
+      if (progressElement) {
+        progressElement.remove();
+      }
     }
 
-    this.updateGenerationUI();
+    // FIXED: Force UI update to reflect the new content
+    setTimeout(() => {
+      this.updateGenerationUI();
+    }, 100);
   }
 
   /**
@@ -953,6 +1100,30 @@ class GenerationUIController {
   }
 
   /**
+   * FIXED: Handle batch completion to clear any remaining loading states
+   */
+  handleBatchCompleted(data) {
+    console.log("Batch generation completed:", data);
+
+    // Remove any remaining processing indicators
+    const processingItems = document.querySelectorAll(
+      ".generation-item.processing"
+    );
+    processingItems.forEach((item) => {
+      item.classList.remove("processing");
+      const progressElement = item.querySelector(".generation-progress");
+      if (progressElement) {
+        progressElement.remove();
+      }
+    });
+
+    // Force UI update
+    setTimeout(() => {
+      this.updateGenerationUI();
+    }, 200);
+  }
+
+  /**
    * Handle generation error
    */
   handleGenerationError(chunkId, error) {
@@ -960,6 +1131,12 @@ class GenerationUIController {
     if (item) {
       item.classList.remove("processing");
       item.classList.add("error");
+
+      // Remove progress indicator
+      const progressElement = item.querySelector(`#progress-${chunkId}`);
+      if (progressElement) {
+        progressElement.remove();
+      }
 
       // Show error in UI
       const errorDiv = document.createElement("div");
@@ -1226,6 +1403,7 @@ class GenerationUIController {
       this.handleGenerationFailed
     );
     this.eventSystem.off("content:reset", this.handleContentReset);
+    this.eventSystem.off("content:batch-generated", this.handleBatchCompleted);
 
     console.log("GenerationUIController cleaned up");
   }
