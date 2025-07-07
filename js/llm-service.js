@@ -1,8 +1,9 @@
 /**
- * Course Forge MVP - LLM Service (FIXED GROUND TRUTH PRESERVATION)
+ * Course Forge MVP - LLM Service (FIXED GROUND TRUTH PRESERVATION + DYNAMIC PROMPTS)
  * Handles communication with AI models using XML tags for reliable data extraction
  * UPDATED: Now supports both OpenRouter/DeepSeek and ChatGPT API based on config
  * FIXED: Ground truth is preserved and used as foundation for content generation
+ * NEW: Dynamic prompt loading from prompts.json file
  */
 
 class LLMService {
@@ -22,8 +23,94 @@ class LLMService {
     this.requestHistory = []; // ADDED: Track request timing
     this.concurrentRequests = 0; // ADDED: Track concurrent requests
 
+    // NEW: Prompt storage
+    this.prompts = null;
+
     // Start initialization but don't block constructor
     this.initializationPromise = this.initializeAPI();
+  }
+
+  /**
+   * NEW: Load prompts from prompts.json file
+   */
+  async loadPrompts() {
+    try {
+      console.log("📋 Loading prompts from prompts.json...");
+
+      // Try to load from the same directory as the script
+      const response = await fetch("./js/prompts.json");
+
+      if (!response.ok) {
+        // Fallback: try from root
+        const fallbackResponse = await fetch("./prompts.json");
+        if (!fallbackResponse.ok) {
+          throw new Error(`Failed to load prompts.json: ${response.status}`);
+        }
+        this.prompts = await fallbackResponse.json();
+      } else {
+        this.prompts = await response.json();
+      }
+
+      console.log("✅ Prompts loaded successfully");
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(
+          "📋 Available prompt templates:",
+          Object.keys(this.prompts)
+        );
+      }
+
+      return true;
+    } catch (error) {
+      console.error("❌ Failed to load prompts:", error);
+
+      // Fallback to hardcoded prompts for development
+      console.warn("🔄 Using fallback hardcoded prompts");
+      this.prompts = this.getFallbackPrompts();
+      return false;
+    }
+  }
+
+  /**
+   * NEW: Get fallback prompts if file loading fails
+   */
+  getFallbackPrompts() {
+    return {
+      chunking: {
+        system:
+          "You are an expert instructional designer creating structured eLearning courses...",
+        user: "Please analyze the following course content and break it into logical chunks for eLearning slides...",
+      },
+      content_generation: {
+        system:
+          "You are an expert instructional designer creating content for eLearning slides...",
+        user: "Generate content for a slide using XML tags...",
+      },
+    };
+  }
+
+  /**
+   * NEW: Inject values into prompt templates
+   */
+  injectPromptValues(template, values) {
+    let result = template;
+
+    // Replace all {{key}} placeholders with actual values
+    Object.entries(values).forEach(([key, value]) => {
+      const placeholder = `{{${key}}}`;
+      const stringValue = Array.isArray(value)
+        ? value.join("\n")
+        : String(value || "");
+      result = result.replace(
+        new RegExp(placeholder.replace(/[{}]/g, "\\$&"), "g"),
+        stringValue
+      );
+    });
+
+    // Clean up any remaining empty placeholders
+    result = result.replace(/\{\{[^}]+\}\}/g, "");
+
+    return result;
   }
 
   /**
@@ -32,6 +119,9 @@ class LLMService {
   async initializeAPI() {
     try {
       console.log("🚀 Initializing LLM Service...");
+
+      // NEW: Load prompts first
+      await this.loadPrompts();
 
       // Check if we're in development and have local config
       if (this.isDevelopment()) {
@@ -60,6 +150,7 @@ class LLMService {
           usingProxy: this.isUsingProxy(),
           hasRequiredApiKey: this.hasRequiredAPIKey(),
           rateLimits: this.rateLimitConfig,
+          promptsLoaded: !!this.prompts,
         });
       }
     } catch (error) {
@@ -131,6 +222,10 @@ class LLMService {
 
     if (!this.isReady) {
       throw new Error("LLM Service failed to initialize properly");
+    }
+
+    if (!this.prompts) {
+      throw new Error("Prompts not loaded properly");
     }
   }
 
@@ -560,7 +655,7 @@ class LLMService {
   }
 
   /**
-   * Generate content chunks using XML tags for reliable extraction
+   * UPDATED: Generate content chunks using dynamic prompts
    */
   async generateChunks(courseConfig) {
     const maxRetries = 3; // Increased retries
@@ -572,8 +667,23 @@ class LLMService {
           `🎯 Starting chunk generation attempt ${attempt}/${maxRetries}`
         );
 
-        const systemPrompt = this.buildChunkingSystemPrompt();
-        const userPrompt = this.buildChunkingUserPrompt(courseConfig);
+        // NEW: Use dynamic prompts
+        const systemPrompt = this.prompts.chunking.system;
+
+        // NEW: Build user prompt with template injection
+        const userPromptTemplate = this.prompts.chunking.user;
+        const userPrompt = this.injectPromptValues(userPromptTemplate, {
+          courseTitle: courseConfig.title,
+          targetAudience:
+            courseConfig.targetAudience || "Professional learners",
+          learningObjectives: courseConfig.learningObjectives.map(
+            (obj) => `- ${obj}`
+          ),
+          sourceContent: courseConfig.sourceContent,
+          additionalGuidance: courseConfig.additionalGuidance
+            ? `**Additional Guidance:** ${courseConfig.additionalGuidance}`
+            : "",
+        });
 
         const messages = [
           { role: "system", content: systemPrompt },
@@ -631,7 +741,7 @@ class LLMService {
   }
 
   /**
-   * FIXED: Generate content for a specific chunk - preserve existing ground truth
+   * FIXED & UPDATED: Generate content for a specific chunk - preserve existing ground truth and use dynamic prompts
    */
   async generateSlideContent(chunk, courseConfig) {
     const maxRetries = 2;
@@ -643,8 +753,29 @@ class LLMService {
           `🎯 Generating content for chunk ${chunk.id}, attempt ${attempt}/${maxRetries}`
         );
 
-        const systemPrompt = this.buildContentSystemPrompt();
-        const userPrompt = this.buildContentUserPrompt(chunk, courseConfig);
+        // FIXED: Ensure we're using the most current ground truth from the chunk
+        console.log("🎯 Current ground truth:", chunk.groundTruth);
+
+        // NEW: Use dynamic prompts
+        const systemPrompt = this.prompts.content_generation.system;
+
+        // NEW: Build user prompt with template injection
+        const userPromptTemplate = this.prompts.content_generation.user;
+        const userPrompt = this.injectPromptValues(userPromptTemplate, {
+          slideType: chunk.slideType,
+          slideTitle: chunk.title,
+          courseTitle: courseConfig.title,
+          targetAudience:
+            courseConfig.targetAudience || "Professional learners",
+          learningObjectives: courseConfig.learningObjectives.join(", "),
+          sourceContent: chunk.sourceContent,
+          groundTruth:
+            chunk.groundTruth ||
+            "No specific guidance provided - use source content to determine slide coverage.",
+          additionalGuidance:
+            courseConfig.additionalGuidance ||
+            "Create engaging, practical content that helps learners achieve the objectives.",
+        });
 
         const messages = [
           { role: "system", content: systemPrompt },
@@ -730,264 +861,6 @@ class LLMService {
     });
     this.requestQueue = [];
     console.log(`🗑️ Cleared ${clearedCount} requests from queue`);
-  }
-
-  /**
-   * Build system prompt for chunking using XML tags - FIXED: Emphasize ground truth creation
-   */
-  buildChunkingSystemPrompt() {
-    return `You are an expert instructional designer creating structured eLearning courses. Your task is to analyze source content and break it down into logical chunks for individual slides.
-
-IMPORTANT: You must respond using XML tags to structure your data. This format is much more reliable than JSON.
-
-Available slide types:
-- title: Title slide with course name and overview
-- courseInfo: Course information, duration, audience, objectives
-- textAndImage: Main content with supporting image
-- textAndBullets: Text content with bullet points
-- iconsWithTitles: Grid of icons with titles and descriptions
-- faq: Frequently asked questions
-- flipCards: Interactive cards that flip to reveal information
-- multipleChoice: Quiz questions with multiple choice answers
-- tabs: Tabbed content organization
-- popups: Information revealed through interactive popups
-
-Guidelines:
-1. Create 6-12 logical chunks from the source content
-2. Each chunk should cover a distinct topic or concept
-3. Choose appropriate slide types based on content structure
-4. Ensure good flow and progression through the material
-5. Include interactive elements (faq, flipCards, multipleChoice) where appropriate
-6. Balance text-heavy and visual slides
-7. MOST IMPORTANT: Create detailed ground truth guidance for each chunk that will serve as the foundation for content generation
-
-Respond with your chunks wrapped in XML tags exactly like this:
-
-<chunks>
-<chunk>
-<title>Introduction to Course Topic</title>
-<slideType>title</slideType>
-<sourceContent>Relevant portion of source content for this chunk...</sourceContent>
-<groundTruth>A detailed paragraph describing exactly what this slide should cover, its specific purpose within the course, what learners should understand after viewing it, and any specific points or examples that must be included. This ground truth will guide content generation and should be comprehensive.</groundTruth>
-</chunk>
-<chunk>
-<title>Key Concepts Overview</title>
-<slideType>textAndBullets</slideType>
-<sourceContent>Relevant portion of source content for this chunk...</sourceContent>
-<groundTruth>This slide will introduce the main concepts learners need to understand, providing a foundation for deeper topics. It should cover [specific concepts], explain [specific relationships], and prepare learners for [what comes next]. Include examples of [specific examples] and emphasize [key points].</groundTruth>
-</chunk>
-</chunks>
-
-Make sure each chunk has meaningful source content and detailed ground truth guidance that will serve as the foundation for content generation.`;
-  }
-
-  /**
-   * Build user prompt for chunking
-   */
-  buildChunkingUserPrompt(courseConfig) {
-    return `Please analyze the following course content and break it into logical chunks for eLearning slides:
-
-**Course Title:** ${courseConfig.title}
-**Target Audience:** ${courseConfig.targetAudience}
-**Learning Objectives:**
-${courseConfig.learningObjectives.map((obj) => `- ${obj}`).join("\n")}
-
-**Source Content:**
-${courseConfig.sourceContent}
-
-${
-  courseConfig.additionalGuidance
-    ? `**Additional Guidance:** ${courseConfig.additionalGuidance}`
-    : ""
-}
-
-Please create 6-12 chunks that cover this material comprehensively. Each chunk should have a clear title, appropriate slide type, relevant source content, and DETAILED ground truth guidance that will serve as the foundation for content generation.`;
-  }
-
-  /**
-   * FIXED: Build system prompt for content generation - emphasize using existing ground truth
-   */
-  buildContentSystemPrompt() {
-    return `You are an expert instructional designer creating content for eLearning slides. You must use XML tags to structure your response.
-
-CRITICAL: You will be provided with existing ground truth guidance for this slide. Use this ground truth as the foundation for your content generation. DO NOT modify or ignore the ground truth - it defines exactly what this slide should cover.
-
-Use the XML format that matches the slide type:
-
-For "title":
-<content>
-<header>Course Title</header>
-<text>Course overview and introduction text</text>
-<audioScript>Script for audio narration</audioScript>
-</content>
-
-For "courseInfo":
-<content>
-<header>Course Information</header>
-<text>Course description</text>
-<duration>Estimated duration</duration>
-<audience>Target audience description</audience>
-<objective>Learning objective 1</objective>
-<objective>Learning objective 2</objective>
-<objective>Learning objective 3</objective>
-<audioScript>Script for audio narration</audioScript>
-</content>
-
-For "textAndImage":
-<content>
-<header>Slide title</header>
-<text>Main content paragraph</text>
-<image>https://images.unsplash.com/photo-relevant-image?w=500&h=300&fit=crop</image>
-<audioScript>Script for audio narration</audioScript>
-</content>
-
-For "textAndBullets":
-<content>
-<header>Slide title</header>
-<text>Introduction paragraph</text>
-<bullet>Bullet point 1</bullet>
-<bullet>Bullet point 2</bullet>
-<bullet>Bullet point 3</bullet>
-<audioScript>Script for audio narration</audioScript>
-</content>
-
-For "iconsWithTitles":
-<content>
-<header>Slide title</header>
-<icon>
-<iconName>target</iconName>
-<title>Title 1</title>
-<description>Description 1</description>
-</icon>
-<icon>
-<iconName>users</iconName>
-<title>Title 2</title>
-<description>Description 2</description>
-</icon>
-<icon>
-<iconName>trending-up</iconName>
-<title>Title 3</title>
-<description>Description 3</description>
-</icon>
-<audioScript>Script for audio narration</audioScript>
-</content>
-
-For "multipleChoice":
-<content>
-<question>Question text</question>
-<option>Option A</option>
-<option>Option B</option>
-<option>Option C</option>
-<option>Option D</option>
-<correctAnswer>0</correctAnswer>
-<feedbackCorrect>Explanation for correct answer</feedbackCorrect>
-<feedbackIncorrect>Explanation and learning opportunity</feedbackIncorrect>
-<audioScript>Script for audio narration</audioScript>
-</content>
-
-For "tabs":
-<content>
-<tab>
-<title>Tab 1</title>
-<tabContent>Content for tab 1</tabContent>
-</tab>
-<tab>
-<title>Tab 2</title>
-<tabContent>Content for tab 2</tabContent>
-</tab>
-<tab>
-<title>Tab 3</title>
-<tabContent>Content for tab 3</tabContent>
-</tab>
-</content>
-
-For "flipCards":
-<content>
-<card>
-<front>Term or concept</front>
-<back>Definition or explanation</back>
-</card>
-<card>
-<front>Another term</front>
-<back>Another explanation</back>
-</card>
-</content>
-
-For "faq":
-<content>
-<header>FAQ Section Title</header>
-<faqItem>
-<question>Question 1?</question>
-<answer>Answer 1</answer>
-</faqItem>
-<faqItem>
-<question>Question 2?</question>
-<answer>Answer 2</answer>
-</faqItem>
-<audioScript>Script for audio narration</audioScript>
-</content>
-
-For "popups":
-<content>
-<popup>
-<title>Resource 1</title>
-<popupContent>Detailed content for popup 1</popupContent>
-</popup>
-<popup>
-<title>Resource 2</title>
-<popupContent>Detailed content for popup 2</popupContent>
-</popup>
-</content>
-
-Guidelines:
-- Use professional, conversational tone
-- Include specific, actionable information
-- For images, use relevant Unsplash photo URLs
-- Audio scripts should be 15-30 seconds when read aloud
-- Make multiple choice questions scenario-based
-- Ensure content is concise and focused
-- MOST IMPORTANT: Base your content generation on the provided ground truth guidance - this defines what the slide should cover
-
-Remember: Use the XML format exactly as shown for the specific slide type and follow the ground truth guidance precisely.`;
-  }
-
-  /**
-   * FIXED: Build user prompt for content generation - emphasize using existing ground truth
-   */
-  buildContentUserPrompt(chunk, courseConfig) {
-    return `Generate content for a "${chunk.slideType}" slide using XML tags.
-
-SLIDE TITLE: ${chunk.title}
-
-COURSE CONTEXT:
-- Course: ${courseConfig.title}
-- Target Audience: ${courseConfig.targetAudience || "Professional learners"}
-- Learning Objectives: ${courseConfig.learningObjectives.join(", ")}
-
-SOURCE CONTENT FOR THIS SLIDE:
-${chunk.sourceContent}
-
-GROUND TRUTH GUIDANCE (FOLLOW THIS PRECISELY):
-${
-  chunk.groundTruth ||
-  "No specific guidance provided - use source content to determine slide coverage."
-}
-
-ADDITIONAL GUIDANCE:
-${
-  courseConfig.additionalGuidance ||
-  "Create engaging, practical content that helps learners achieve the objectives."
-}
-
-CRITICAL INSTRUCTIONS:
-1. Use the ground truth guidance as the foundation for your content generation
-2. Ensure the generated content covers exactly what the ground truth specifies
-3. Do not deviate from the ground truth requirements
-4. The ground truth defines what this slide should accomplish
-
-Please respond using the XML format specified for "${
-      chunk.slideType
-    }" slides. Make sure your generated content aligns precisely with the ground truth guidance provided above.`;
   }
 
   /**

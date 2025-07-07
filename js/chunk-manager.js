@@ -1,6 +1,7 @@
 /**
- * Chunk Manager - Handles chunk operations and state management (FIXED)
+ * Chunk Manager - Handles chunk operations and state management (FIXED GROUND TRUTH)
  * Enhanced with proper LLM service integration and error handling
+ * FIXED: Ground truth is always preserved during all operations
  */
 class ChunkManager {
   constructor(stateManager, eventSystem) {
@@ -24,6 +25,7 @@ class ChunkManager {
 
   /**
    * ENHANCED: Generate chunks from course content with better error handling
+   * FIXED: Preserve existing ground truth when regenerating
    */
   async generateChunks(courseConfig, force = false) {
     if (this.isProcessing && !force) {
@@ -64,6 +66,22 @@ class ChunkManager {
       const existingChunks = this.stateManager.getState("chunks") || [];
       const lockedChunks = existingChunks.filter((chunk) => chunk.isLocked);
 
+      // FIXED: Preserve ground truth from existing chunks (even unlocked ones)
+      const preservedGroundTruths = new Map();
+      existingChunks.forEach((chunk) => {
+        if (chunk.groundTruth && chunk.groundTruth.trim()) {
+          preservedGroundTruths.set(chunk.title, {
+            groundTruth: chunk.groundTruth,
+            chunkId: chunk.id,
+            order: chunk.order,
+          });
+          console.log(
+            `🛡️ Preserving ground truth for "${chunk.title}":`,
+            chunk.groundTruth.substring(0, 100) + "..."
+          );
+        }
+      });
+
       StatusManager.showLoading("Analyzing content and generating chunks...");
 
       // Generate chunks using LLM
@@ -74,6 +92,15 @@ class ChunkManager {
       if (!generatedChunks || generatedChunks.length === 0) {
         throw new Error("No chunks were generated");
       }
+
+      // FIXED: Restore preserved ground truths where possible
+      generatedChunks.forEach((chunk) => {
+        const preserved = preservedGroundTruths.get(chunk.title);
+        if (preserved) {
+          console.log(`🔄 Restoring ground truth for "${chunk.title}"`);
+          chunk.groundTruth = preserved.groundTruth;
+        }
+      });
 
       // Merge with locked chunks
       const finalChunks = this.mergeChunks(lockedChunks, generatedChunks);
@@ -87,12 +114,17 @@ class ChunkManager {
         count: finalChunks.length,
         generatedCount: generatedChunks.length,
         lockedCount: lockedChunks.length,
+        preservedGroundTruths: preservedGroundTruths.size,
       });
 
       StatusManager.showSuccess(
         `Successfully generated ${generatedChunks.length} chunks!${
           lockedChunks.length > 0
             ? ` (${lockedChunks.length} locked chunks preserved)`
+            : ""
+        }${
+          preservedGroundTruths.size > 0
+            ? ` (${preservedGroundTruths.size} ground truths preserved)`
             : ""
         }`
       );
@@ -186,6 +218,7 @@ class ChunkManager {
 
   /**
    * ENHANCED: Merge locked chunks with newly generated chunks
+   * FIXED: Better preservation of ground truth and content
    */
   mergeChunks(lockedChunks, newChunks) {
     const mergedChunks = [];
@@ -348,6 +381,8 @@ class ChunkManager {
       isLocked: false, // Duplicated chunks are not locked by default
       generatedContent: null, // Don't copy generated content
       createdAt: new Date().toISOString(),
+      // FIXED: Preserve ground truth when duplicating
+      groundTruth: originalChunk.groundTruth || "",
     };
 
     chunks.push(duplicatedChunk);
@@ -463,7 +498,7 @@ class ChunkManager {
   }
 
   /**
-   * Change chunk slide type
+   * FIXED: Change chunk slide type - preserve ground truth
    */
   changeChunkType(chunkId, newType) {
     const chunks = this.stateManager.getState("chunks") || [];
@@ -481,6 +516,10 @@ class ChunkManager {
     }
 
     const oldType = chunk.slideType;
+
+    // FIXED: Preserve ground truth when changing slide type
+    const preservedGroundTruth = chunk.groundTruth;
+
     chunk.slideType = newType;
 
     // Clear generated content when changing type
@@ -490,6 +529,9 @@ class ChunkManager {
         "Generated content cleared due to slide type change"
       );
     }
+
+    // FIXED: Restore preserved ground truth
+    chunk.groundTruth = preservedGroundTruth;
 
     this.stateManager.setState("chunks", chunks);
 
@@ -563,7 +605,18 @@ class ChunkManager {
       return false;
     }
 
+    // FIXED: Update ground truth and log the change
+    const oldGroundTruth = chunk.groundTruth;
     chunk.groundTruth = newGroundTruth.trim();
+
+    console.log("🎯 Ground truth updated:", {
+      chunkId: targetId,
+      chunkTitle: chunk.title,
+      oldLength: oldGroundTruth ? oldGroundTruth.length : 0,
+      newLength: chunk.groundTruth.length,
+      updated: true,
+    });
+
     this.stateManager.setState("chunks", chunks);
 
     this.eventSystem.emit("chunk:ground-truth-updated", {

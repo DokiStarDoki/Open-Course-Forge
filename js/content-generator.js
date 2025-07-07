@@ -1,6 +1,7 @@
 /**
- * Course Forge MVP - Content Generator (FIXED CONFIRMATION & GROUND TRUTH)
+ * Course Forge MVP - Content Generator (FIXED GROUND TRUTH PRESERVATION)
  * Handles content generation for slides using LLM service with proper status cleanup
+ * FIXED: Ground truth is NEVER overwritten during regeneration - always uses current state
  */
 
 class ContentGenerator {
@@ -46,7 +47,7 @@ class ContentGenerator {
   }
 
   /**
-   * ENHANCED: Generate content for a specific slide with better error handling
+   * FIXED: Generate content for a specific slide - ALWAYS use current ground truth from state
    */
   async generateSlideContent(chunkId) {
     if (this.currentlyGenerating.has(chunkId)) {
@@ -59,6 +60,7 @@ class ContentGenerator {
     try {
       this.currentlyGenerating.add(chunkId);
 
+      // FIXED: Always get the CURRENT state of chunks to ensure we have latest ground truth
       const chunks = this.stateManager.getState("chunks") || [];
       const chunk = chunks.find((c) => c.id === chunkId);
 
@@ -69,6 +71,13 @@ class ContentGenerator {
       if (chunk.isLocked) {
         throw new Error("Cannot generate content for locked chunk");
       }
+
+      // CRITICAL: Log the ground truth we're about to use
+      console.log("🎯 USING GROUND TRUTH FOR GENERATION:", {
+        chunkId: chunk.id,
+        groundTruth: chunk.groundTruth,
+        groundTruthLength: chunk.groundTruth ? chunk.groundTruth.length : 0,
+      });
 
       // Validate LLM service
       if (!this.llmService) {
@@ -85,17 +94,31 @@ class ContentGenerator {
 
       const courseConfig = this.stateManager.getState("courseConfig");
       const generatedContent = await this.llmService.generateSlideContent(
-        chunk,
+        chunk, // This chunk object contains the CURRENT ground truth
         courseConfig
       );
 
-      // Update chunk with generated content
-      const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
+      // FIXED: Get fresh chunk state again and preserve ground truth
+      const currentChunks = this.stateManager.getState("chunks") || [];
+      const chunkIndex = currentChunks.findIndex((c) => c.id === chunkId);
+
       if (chunkIndex >= 0) {
-        chunks[chunkIndex].generatedContent = generatedContent;
-        chunks[chunkIndex].lastGenerated = new Date().toISOString();
-        // FIXED: Preserve ground truth - don't overwrite it during content generation
-        this.stateManager.setState("chunks", chunks);
+        // CRITICAL: Preserve the current ground truth, don't overwrite it
+        const currentGroundTruth = currentChunks[chunkIndex].groundTruth;
+
+        currentChunks[chunkIndex].generatedContent = generatedContent;
+        currentChunks[chunkIndex].lastGenerated = new Date().toISOString();
+
+        // FIXED: Explicitly preserve ground truth - never overwrite
+        currentChunks[chunkIndex].groundTruth = currentGroundTruth;
+
+        console.log("🛡️ PRESERVED GROUND TRUTH:", {
+          chunkId: chunkId,
+          groundTruth: currentGroundTruth,
+          preserved: true,
+        });
+
+        this.stateManager.setState("chunks", currentChunks);
       }
 
       // FIXED: Clear loading state immediately after success
@@ -128,9 +151,10 @@ class ContentGenerator {
   }
 
   /**
-   * Regenerate content for a specific slide
+   * FIXED: Regenerate content for a specific slide - preserve ground truth
    */
   async regenerateSlideContent(chunkId) {
+    // FIXED: Get current chunk state to preserve ground truth
     const chunks = this.stateManager.getState("chunks") || [];
     const chunk = chunks.find((c) => c.id === chunkId);
 
@@ -144,22 +168,40 @@ class ContentGenerator {
       return;
     }
 
-    // FIXED: Removed confirmation dialog - just regenerate directly
-    console.log(`Regenerating content for "${chunk.title}"`);
+    console.log(`🔄 Regenerating content for "${chunk.title}"`);
+    console.log(
+      "🎯 Current ground truth before regeneration:",
+      chunk.groundTruth
+    );
 
-    // Clear existing content and regenerate (but preserve ground truth)
+    // FIXED: Clear existing generated content but PRESERVE ground truth
     const chunkIndex = chunks.findIndex((c) => c.id === chunkId);
     if (chunkIndex >= 0) {
+      // Store current ground truth to ensure it's preserved
+      const preservedGroundTruth = chunks[chunkIndex].groundTruth;
+
+      // Clear only the generated content
       chunks[chunkIndex].generatedContent = null;
-      // FIXED: Keep ground truth intact during regeneration
+      chunks[chunkIndex].lastGenerated = null;
+
+      // CRITICAL: Ensure ground truth is preserved
+      chunks[chunkIndex].groundTruth = preservedGroundTruth;
+
+      console.log("🛡️ PRESERVED GROUND TRUTH DURING RESET:", {
+        chunkId: chunkId,
+        groundTruth: preservedGroundTruth,
+        clearedContent: true,
+      });
+
       this.stateManager.setState("chunks", chunks);
     }
 
+    // Now regenerate with the preserved ground truth
     await this.generateSlideContent(chunkId);
   }
 
   /**
-   * FIXED: Generate content for all slides - removed confirmation dialog
+   * FIXED: Generate content for all slides - preserve all ground truths
    */
   async generateAllContent() {
     const chunks = this.stateManager.getState("chunks") || [];
@@ -172,8 +214,16 @@ class ContentGenerator {
       return;
     }
 
-    // FIXED: Removed confirmation dialog - start generation immediately
     console.log(`Starting generation for ${pendingChunks.length} slides`);
+    console.log(
+      "🎯 Ground truth status for all chunks:",
+      chunks.map((c) => ({
+        id: c.id,
+        title: c.title,
+        hasGroundTruth: !!(c.groundTruth && c.groundTruth.trim()),
+        groundTruthLength: c.groundTruth ? c.groundTruth.length : 0,
+      }))
+    );
 
     // Start batch operation with enhanced tracking
     this.batchOperationId = `batch-${Date.now()}`;
@@ -456,10 +506,14 @@ class ContentGenerator {
     try {
       StatusManager.showLoading(`Changing slide type to ${newSlideType}...`);
 
-      // Update slide type and clear content (but preserve ground truth)
+      // FIXED: Preserve ground truth when changing slide type
+      const preservedGroundTruth = chunks[chunkIndex].groundTruth;
+
+      // Update slide type and clear content but preserve ground truth
       chunks[chunkIndex].slideType = newSlideType;
       chunks[chunkIndex].generatedContent = null;
-      // FIXED: Keep ground truth intact
+      chunks[chunkIndex].groundTruth = preservedGroundTruth; // FIXED: Keep ground truth intact
+
       this.stateManager.setState("chunks", chunks);
 
       // Regenerate content with new type

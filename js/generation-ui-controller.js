@@ -1,6 +1,6 @@
 /**
  * Generation UI Controller - Manages content generation display and interactions
- * FIXED: Single event binding for Generate All button and removed confirmation dialogs
+ * FIXED: Ground truth is properly saved before regeneration and never overwritten
  */
 class GenerationUIController {
   constructor(stateManager, eventSystem) {
@@ -1015,7 +1015,7 @@ class GenerationUIController {
   }
 
   /**
-   * FIXED: Regenerate content for specific chunk - removed confirmation
+   * FIXED: Regenerate content for specific chunk - ensure ground truth is saved first
    */
   async regenerateChunkContent(chunkId) {
     if (!this.contentGenerator) {
@@ -1023,12 +1023,15 @@ class GenerationUIController {
       return;
     }
 
+    // CRITICAL FIX: Save any pending ground truth edits BEFORE regenerating
+    await this.savePendingGroundTruthEdits(chunkId);
+
     // FIXED: Direct regeneration without confirmation
     await this.contentGenerator.regenerateSlideContent(chunkId);
   }
 
   /**
-   * FIXED: Generate all content with proper error handling - no confirmation
+   * FIXED: Generate all content with proper error handling - save all ground truth first
    */
   async generateAllContent() {
     console.log("GenerationUIController.generateAllContent called");
@@ -1039,6 +1042,9 @@ class GenerationUIController {
       return;
     }
 
+    // CRITICAL FIX: Save all pending ground truth edits BEFORE generating
+    await this.saveAllPendingGroundTruthEdits();
+
     console.log("Calling contentGenerator.generateAllContent...");
     try {
       // FIXED: Direct call without confirmation
@@ -1047,6 +1053,64 @@ class GenerationUIController {
       console.error("Generate all content failed:", error);
       StatusManager.showError(`Generate all failed: ${error.message}`);
     }
+  }
+
+  /**
+   * NEW: Save pending ground truth edits for a specific chunk
+   */
+  async savePendingGroundTruthEdits(chunkId) {
+    console.log("🛡️ Saving pending ground truth edits for chunk:", chunkId);
+
+    const groundTruthElement = document.querySelector(
+      `[data-chunk-id="${chunkId}"][data-field="groundTruth"]`
+    );
+
+    if (groundTruthElement) {
+      const currentValue = groundTruthElement.textContent || "";
+      const chunks = this.stateManager.getState("chunks") || [];
+      const chunk = chunks.find((c) => c.id === chunkId);
+
+      if (chunk && currentValue !== chunk.groundTruth) {
+        console.log("🔄 Ground truth has unsaved changes, saving now:", {
+          chunkId,
+          oldValue: chunk.groundTruth,
+          newValue: currentValue,
+        });
+
+        this.updateChunkContent(chunkId, "groundTruth", currentValue);
+
+        // Clear any editing session
+        const sessionKey = `${chunkId}-groundTruth`;
+        this.editingSession.delete(sessionKey);
+
+        // Clear auto-save timeout
+        if (this.autoSaveTimeouts[sessionKey]) {
+          clearTimeout(this.autoSaveTimeouts[sessionKey]);
+          delete this.autoSaveTimeouts[sessionKey];
+        }
+      }
+    }
+  }
+
+  /**
+   * NEW: Save all pending ground truth edits for all chunks
+   */
+  async saveAllPendingGroundTruthEdits() {
+    console.log("🛡️ Saving all pending ground truth edits...");
+
+    const groundTruthElements = document.querySelectorAll(
+      '[data-field="groundTruth"]'
+    );
+
+    const savePromises = Array.from(groundTruthElements).map((element) => {
+      const chunkId = element.dataset.chunkId;
+      if (chunkId) {
+        return this.savePendingGroundTruthEdits(chunkId);
+      }
+    });
+
+    await Promise.all(savePromises.filter(Boolean));
+    console.log("✅ All ground truth edits saved");
   }
 
   /**
@@ -1060,6 +1124,11 @@ class GenerationUIController {
     if (selectedIds.length === 0) {
       StatusManager.showWarning("Please select slides to generate");
       return;
+    }
+
+    // CRITICAL FIX: Save ground truth edits for selected chunks first
+    for (const chunkId of selectedIds) {
+      await this.savePendingGroundTruthEdits(chunkId);
     }
 
     StatusManager.showLoading(
@@ -1191,7 +1260,7 @@ class GenerationUIController {
   }
 
   /**
-   * Save inline edit
+   * FIXED: Save inline edit with proper ground truth handling
    */
   saveInlineEdit(element) {
     const chunkId = element.dataset.chunkId;
@@ -1202,20 +1271,28 @@ class GenerationUIController {
     if (!chunkId || !field) return;
 
     const session = this.editingSession.get(sessionKey);
-    if (!session) return;
+    if (!session) {
+      // No editing session, create one with current value
+      const currentValue = element.textContent || "";
+      this.editingSession.set(sessionKey, {
+        originalValue: currentValue,
+        startTime: Date.now(),
+      });
+    }
 
-    const newValue = element.textContent || "";
-    const hasChanged = newValue !== session.originalValue;
+    // Clear any pending auto-save
+    if (this.autoSaveTimeouts[sessionKey]) {
+      clearTimeout(this.autoSaveTimeouts[sessionKey]);
+    }
+
+    const newValue = (element.textContent || "").trim();
+    const sessionData = this.editingSession.get(sessionKey);
+    const hasChanged = newValue !== sessionData.originalValue;
 
     // Remove editing class
     element.classList.remove("editing");
 
     if (hasChanged) {
-      // Clear any pending auto-save
-      if (this.autoSaveTimeouts[sessionKey]) {
-        clearTimeout(this.autoSaveTimeouts[sessionKey]);
-      }
-
       // Update content immediately
       this.updateChunkContent(chunkId, field, newValue);
 
@@ -1229,13 +1306,24 @@ class GenerationUIController {
   }
 
   /**
-   * Handle keydown events during inline editing
+   * UPDATED: Handle keydown events during inline editing
    */
   handleInlineEditKeydown(event, element) {
     const chunkId = element.dataset.chunkId;
     const field = element.dataset.field;
 
     if (!chunkId || !field) return;
+
+    const sessionKey = `${chunkId}-${field}`;
+
+    // Initialize editing session if not exists
+    if (!this.editingSession.has(sessionKey)) {
+      this.editingSession.set(sessionKey, {
+        originalValue: element.textContent || "",
+        startTime: Date.now(),
+      });
+      element.classList.add("editing");
+    }
 
     // Escape key: cancel editing
     if (event.key === "Escape") {
@@ -1244,21 +1332,24 @@ class GenerationUIController {
       return;
     }
 
-    // Enter behavior for different field types
-    if (event.key === "Enter") {
-      if (
-        field.includes("title") ||
-        field.includes("header") ||
-        field === "groundTruth"
-      ) {
-        // Single-line fields: blur on Enter (except ground truth which can be multi-line)
-        if (field !== "groundTruth") {
-          event.preventDefault();
-          element.blur();
-        }
-      }
-      // Multi-line fields: allow normal Enter behavior
+    // Auto-save on typing (debounced)
+    if (this.autoSaveTimeouts[sessionKey]) {
+      clearTimeout(this.autoSaveTimeouts[sessionKey]);
     }
+
+    this.autoSaveTimeouts[sessionKey] = setTimeout(() => {
+      const newValue = (element.textContent || "").trim();
+      const session = this.editingSession.get(sessionKey);
+
+      if (session && newValue !== session.originalValue) {
+        this.updateChunkContent(chunkId, field, newValue);
+        session.originalValue = newValue; // Update original value
+
+        // Visual feedback
+        element.classList.add("auto-saved");
+        setTimeout(() => element.classList.remove("auto-saved"), 1000);
+      }
+    }, 1000); // Auto-save after 1 second of inactivity
   }
 
   /**
@@ -1276,7 +1367,7 @@ class GenerationUIController {
   }
 
   /**
-   * Update chunk content in state (ENHANCED FOR GROUND TRUTH)
+   * FIXED: Update chunk content in state with enhanced ground truth handling
    */
   updateChunkContent(chunkId, field, value) {
     const chunks = this.stateManager.getState("chunks") || [];
@@ -1291,7 +1382,18 @@ class GenerationUIController {
 
     // Handle ground truth updates directly on chunk object
     if (field === "groundTruth") {
+      const oldGroundTruth = chunk.groundTruth;
       chunk.groundTruth = value;
+
+      // CRITICAL: Log the ground truth update for debugging
+      console.log("🎯 GROUND TRUTH UPDATED IN STATE:", {
+        chunkId: chunkId,
+        chunkTitle: chunk.title,
+        oldValue: oldGroundTruth,
+        newValue: value,
+        length: value.length,
+        timestamp: new Date().toISOString(),
+      });
 
       // Visual feedback for ground truth update
       const element = document.querySelector(
