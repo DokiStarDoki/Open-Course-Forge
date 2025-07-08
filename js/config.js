@@ -45,12 +45,14 @@ const CONFIG = {
     ERROR_MESSAGE_DURATION: 4500,
   },
 
-  // Content Processing
+  // Content Processing - UPDATED with higher word and chunk limits
   CONTENT: {
-    MAX_WORD_COUNT: 15000,
+    MAX_WORD_COUNT: 25000, // Increased from 15000 to 25000 for comprehensive reference content
     MIN_WORD_COUNT: 100,
-    DEFAULT_CHUNK_COUNT: 8,
-    MAX_CHUNK_COUNT: 20,
+    DEFAULT_CHUNK_COUNT: 12, // Increased from 8 to 12 for better default
+    MAX_CHUNK_COUNT: 60, // Increased from 20 to 60 to support longer courses
+    MIN_CHUNK_COUNT: 6, // Added explicit minimum
+    CHUNK_DURATION_MINUTES: 2.5, // Average time per chunk for calculations
   },
 
   // Slide Types
@@ -103,6 +105,12 @@ const CONFIG = {
       MIN_LENGTH: 3,
       MAX_LENGTH: 80,
     },
+    // ADDED: Course duration validation
+    COURSE_DURATION: {
+      MIN_MINUTES: 10,
+      MAX_MINUTES: 300, // 5 hours maximum
+      DEFAULT_MINUTES: 45,
+    },
   },
 
   // Error Messages
@@ -116,6 +124,9 @@ const CONFIG = {
     API_ERROR: "Failed to communicate with AI service",
     NETWORK_ERROR: "Network connection error",
     PROCESSING_ERROR: "Error processing content",
+    COURSE_TOO_LONG: "Course duration exceeds maximum limit (5 hours)",
+    COURSE_TOO_SHORT: "Course duration below minimum limit (10 minutes)",
+    CONTENT_TOO_LONG: "Source content exceeds maximum limit (25,000 words)",
   },
 
   // Success Messages
@@ -131,6 +142,60 @@ const CONFIG = {
   DEBUG: {
     ENABLED: true, // Set to false in production
     LOG_LEVEL: "info", // 'debug', 'info', 'warn', 'error'
+  },
+
+  // ADDED: Helper methods for chunk calculations
+  calculateOptimalChunks(durationString) {
+    if (!durationString || durationString.trim() === "") {
+      return this.CONTENT.DEFAULT_CHUNK_COUNT;
+    }
+
+    // Extract minutes from duration string
+    let minutes = 0;
+
+    if (durationString.includes("hour")) {
+      const hourMatch = durationString.match(/(\d+)\s*hour/);
+      if (hourMatch) {
+        minutes = parseInt(hourMatch[1]) * 60;
+      }
+    } else {
+      const minuteMatch = durationString.match(/(\d+)/);
+      if (minuteMatch) {
+        minutes = parseInt(minuteMatch[1]);
+      }
+    }
+
+    if (minutes === 0) {
+      return this.CONTENT.DEFAULT_CHUNK_COUNT;
+    }
+
+    // Calculate ideal chunks based on duration
+    const idealChunks = Math.round(
+      minutes / this.CONTENT.CHUNK_DURATION_MINUTES
+    );
+
+    // Apply bounds
+    return Math.max(
+      this.CONTENT.MIN_CHUNK_COUNT,
+      Math.min(this.CONTENT.MAX_CHUNK_COUNT, idealChunks)
+    );
+  },
+
+  getChunkCalculationInfo(durationString) {
+    const optimalChunks = this.calculateOptimalChunks(durationString);
+    const actualDuration = optimalChunks * this.CONTENT.CHUNK_DURATION_MINUTES;
+
+    return {
+      optimalChunks,
+      actualDuration,
+      isWithinLimits:
+        optimalChunks >= this.CONTENT.MIN_CHUNK_COUNT &&
+        optimalChunks <= this.CONTENT.MAX_CHUNK_COUNT,
+      suggestion:
+        optimalChunks === this.CONTENT.MAX_CHUNK_COUNT
+          ? "Consider breaking long courses into multiple modules"
+          : null,
+    };
   },
 
   // Helper methods for API provider logic

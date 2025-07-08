@@ -1,11 +1,3 @@
-/**
- * Course Forge MVP - LLM Service (FIXED GROUND TRUTH PRESERVATION + DYNAMIC PROMPTS)
- * Handles communication with AI models using XML tags for reliable data extraction
- * UPDATED: Now supports both OpenRouter/DeepSeek and ChatGPT API based on config
- * FIXED: Ground truth is preserved and used as foundation for content generation
- * NEW: Dynamic prompt loading from prompts.json file
- */
-
 class LLMService {
   constructor() {
     this.openRouterApiKey = null;
@@ -13,89 +5,48 @@ class LLMService {
     this.apiUrl = null;
     this.isReady = false;
     this.initializationPromise = null;
-    this.requestQueue = []; // ADDED: Request queue for rate limiting
-    this.isProcessingQueue = false; // ADDED: Queue processing flag
+    this.requestQueue = [];
+    this.isProcessingQueue = false;
     this.rateLimitConfig = {
       maxRequestsPerMinute: 20,
-      requestInterval: 3000, // 3 seconds between requests
+      requestInterval: 3000,
       maxConcurrentRequests: 2,
     };
-    this.requestHistory = []; // ADDED: Track request timing
-    this.concurrentRequests = 0; // ADDED: Track concurrent requests
+    this.requestHistory = [];
+    this.concurrentRequests = 0;
 
-    // NEW: Prompt storage
     this.prompts = null;
 
-    // Start initialization but don't block constructor
     this.initializationPromise = this.initializeAPI();
   }
 
-  /**
-   * NEW: Load prompts from prompts.json file
-   */
   async loadPrompts() {
-    try {
-      console.log("📋 Loading prompts from prompts.json...");
+    console.log("📋 Loading prompts from prompts.json...");
 
-      // Try to load from the same directory as the script
-      const response = await fetch("./js/prompts.json");
+    const response = await fetch("./js/prompts.json");
 
-      if (!response.ok) {
-        // Fallback: try from root
-        const fallbackResponse = await fetch("./prompts.json");
-        if (!fallbackResponse.ok) {
-          throw new Error(`Failed to load prompts.json: ${response.status}`);
-        }
-        this.prompts = await fallbackResponse.json();
-      } else {
-        this.prompts = await response.json();
+    if (!response.ok) {
+      const fallbackResponse = await fetch("./prompts.json");
+      if (!fallbackResponse.ok) {
+        throw new Error(`Failed to load prompts.json: ${response.status}`);
       }
-
-      console.log("✅ Prompts loaded successfully");
-
-      if (CONFIG.DEBUG.ENABLED) {
-        console.log(
-          "📋 Available prompt templates:",
-          Object.keys(this.prompts)
-        );
-      }
-
-      return true;
-    } catch (error) {
-      console.error("❌ Failed to load prompts:", error);
-
-      // Fallback to hardcoded prompts for development
-      console.warn("🔄 Using fallback hardcoded prompts");
-      this.prompts = this.getFallbackPrompts();
-      return false;
+      this.prompts = await fallbackResponse.json();
+    } else {
+      this.prompts = await response.json();
     }
+
+    console.log("✅ Prompts loaded successfully");
+
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log("📋 Available prompt templates:", Object.keys(this.prompts));
+    }
+
+    return true;
   }
 
-  /**
-   * NEW: Get fallback prompts if file loading fails
-   */
-  getFallbackPrompts() {
-    return {
-      chunking: {
-        system:
-          "You are an expert instructional designer creating structured eLearning courses...",
-        user: "Please analyze the following course content and break it into logical chunks for eLearning slides...",
-      },
-      content_generation: {
-        system:
-          "You are an expert instructional designer creating content for eLearning slides...",
-        user: "Generate content for a slide using XML tags...",
-      },
-    };
-  }
-
-  /**
-   * NEW: Inject values into prompt templates
-   */
   injectPromptValues(template, values) {
     let result = template;
 
-    // Replace all {{key}} placeholders with actual values
     Object.entries(values).forEach(([key, value]) => {
       const placeholder = `{{${key}}}`;
       const stringValue = Array.isArray(value)
@@ -107,23 +58,17 @@ class LLMService {
       );
     });
 
-    // Clean up any remaining empty placeholders
     result = result.replace(/\{\{[^}]+\}\}/g, "");
 
     return result;
   }
 
-  /**
-   * Initialize API configuration with enhanced error handling
-   */
   async initializeAPI() {
     try {
       console.log("🚀 Initializing LLM Service...");
 
-      // NEW: Load prompts first
       await this.loadPrompts();
 
-      // Check if we're in development and have local config
       if (this.isDevelopment()) {
         console.log(
           "📍 Development environment detected, loading local config..."
@@ -131,13 +76,10 @@ class LLMService {
         await this.loadLocalConfig();
       }
 
-      // Set API URL based on configuration
       this.apiUrl = this.getAPIUrl();
 
-      // Validate setup
       this.validateSetup();
 
-      // ADDED: Test the connection with a simple request
       await this.testConnection();
 
       this.isReady = true;
@@ -156,7 +98,6 @@ class LLMService {
     } catch (error) {
       console.error("❌ Failed to initialize LLMService:", error);
 
-      // Show user-friendly error message
       if (this.isDevelopment() && !this.hasRequiredAPIKey()) {
         const provider = CONFIG.getActiveAPIProvider();
         const keyName =
@@ -170,14 +111,10 @@ class LLMService {
         );
       }
 
-      // Don't throw - let the app continue without AI features
       this.isReady = false;
     }
   }
 
-  /**
-   * ADDED: Test connection to AI service
-   */
   async testConnection() {
     try {
       console.log("🔗 Testing AI service connection...");
@@ -206,9 +143,6 @@ class LLMService {
     }
   }
 
-  /**
-   * ENHANCED: Ensure service is ready with better error handling
-   */
   async ensureReady() {
     if (!this.initializationPromise) {
       throw new Error("LLM Service not initialized");
@@ -229,9 +163,6 @@ class LLMService {
     }
   }
 
-  /**
-   * Check if running in development
-   */
   isDevelopment() {
     return (
       window.location.hostname === "localhost" ||
@@ -240,9 +171,6 @@ class LLMService {
     );
   }
 
-  /**
-   * Load local configuration (development only) with timeout
-   */
   async loadLocalConfig() {
     if (!this.isDevelopment()) return;
 
@@ -272,9 +200,6 @@ class LLMService {
     }
   }
 
-  /**
-   * Wait for local config to load with enhanced checking
-   */
   async waitForLocalConfig(timeoutMs = 5000) {
     const startTime = Date.now();
     const checkInterval = 100;
@@ -293,16 +218,10 @@ class LLMService {
     return false;
   }
 
-  /**
-   * Wait utility function
-   */
   wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  /**
-   * Get API URL based on environment and configuration
-   */
   getAPIUrl() {
     if (this.isDevelopment()) {
       if (this.hasRequiredAPIKey()) {
@@ -315,9 +234,6 @@ class LLMService {
     }
   }
 
-  /**
-   * Check if we have the required API key for the current provider
-   */
   hasRequiredAPIKey() {
     if (CONFIG.USE_CHATGPT_API) {
       return !!this.openAIApiKey;
@@ -326,9 +242,6 @@ class LLMService {
     }
   }
 
-  /**
-   * Get the appropriate API key for the current provider
-   */
   getCurrentAPIKey() {
     if (CONFIG.USE_CHATGPT_API) {
       return this.openAIApiKey;
@@ -337,16 +250,10 @@ class LLMService {
     }
   }
 
-  /**
-   * Check if using proxy
-   */
   isUsingProxy() {
     return this.apiUrl.includes("/api/chat");
   }
 
-  /**
-   * Validate API setup
-   */
   validateSetup() {
     if (this.isUsingProxy()) {
       console.log("📡 Using proxy URL:", this.apiUrl);
@@ -369,18 +276,13 @@ class LLMService {
     return true;
   }
 
-  /**
-   * ENHANCED: Make API request with rate limiting and queue management
-   */
   async makeRequest(messages, options = {}) {
     await this.ensureReady();
 
-    // Skip queue for test requests
     if (options.skipQueue) {
       return this.makeDirectRequest(messages, options);
     }
 
-    // Add request to queue
     return new Promise((resolve, reject) => {
       this.requestQueue.push({
         messages,
@@ -390,16 +292,12 @@ class LLMService {
         timestamp: Date.now(),
       });
 
-      // Start processing queue if not already processing
       if (!this.isProcessingQueue) {
         this.processRequestQueue();
       }
     });
   }
 
-  /**
-   * ADDED: Process request queue with rate limiting
-   */
   async processRequestQueue() {
     if (this.isProcessingQueue) return;
 
@@ -417,7 +315,6 @@ class LLMService {
         continue;
       }
 
-      // Get next request
       const request = this.requestQueue.shift();
 
       try {
@@ -425,22 +322,18 @@ class LLMService {
           `🔄 Processing request (${this.requestQueue.length} remaining)`
         );
 
-        // Track concurrent requests
         this.concurrentRequests++;
 
-        // Make the actual request
         const response = await this.makeDirectRequest(
           request.messages,
           request.options
         );
 
-        // Track request completion
         this.recordRequest();
         this.concurrentRequests--;
 
         request.resolve(response);
 
-        // Wait between requests to avoid overwhelming the API
         if (this.requestQueue.length > 0) {
           await this.wait(this.rateLimitConfig.requestInterval);
         }
@@ -460,9 +353,6 @@ class LLMService {
     console.log("✅ Request queue processing complete");
   }
 
-  /**
-   * ADDED: Check if we can make a request based on rate limits
-   */
   canMakeRequest() {
     const now = Date.now();
     const oneMinuteAgo = now - 60000;
@@ -487,19 +377,14 @@ class LLMService {
     return true;
   }
 
-  /**
-   * ADDED: Get wait time for rate limiting
-   */
   getWaitTime() {
     const now = Date.now();
     const oneMinuteAgo = now - 60000;
 
-    // Clean old requests
     this.requestHistory = this.requestHistory.filter(
       (time) => time > oneMinuteAgo
     );
 
-    // If we're at the limit, wait until the oldest request is more than a minute old
     if (
       this.requestHistory.length >= this.rateLimitConfig.maxRequestsPerMinute
     ) {
@@ -507,20 +392,13 @@ class LLMService {
       return Math.max(1000, oldestRequest + 60000 - now);
     }
 
-    // Otherwise wait the standard interval
     return this.rateLimitConfig.requestInterval;
   }
 
-  /**
-   * ADDED: Record a completed request
-   */
   recordRequest() {
     this.requestHistory.push(Date.now());
   }
 
-  /**
-   * Make direct API request to LLM with improved error handling
-   */
   async makeDirectRequest(messages, options = {}) {
     const requestBody = {
       model: options.model || CONFIG.getDefaultModel(),
@@ -530,13 +408,10 @@ class LLMService {
       stream: false,
     };
 
-    // Add provider-specific parameters
     if (CONFIG.USE_CHATGPT_API) {
-      // OpenAI API parameters
       requestBody.top_p = options.topP || 0.9;
       if (options.stop) requestBody.stop = options.stop;
     } else {
-      // OpenRouter API parameters
       requestBody.top_p = options.topP || 0.9;
       requestBody.stop = options.stop || null;
       requestBody.presence_penalty = 0.1;
@@ -551,20 +426,16 @@ class LLMService {
       body: JSON.stringify(requestBody),
     };
 
-    // Add authorization header if using direct API
     if (!this.isUsingProxy() && this.hasRequiredAPIKey()) {
       const apiKey = this.getCurrentAPIKey();
       requestOptions.headers["Authorization"] = `Bearer ${apiKey}`;
 
-      // Add provider-specific headers
       if (!CONFIG.USE_CHATGPT_API) {
-        // OpenRouter specific headers
         requestOptions.headers["HTTP-Referer"] = window.location.origin;
         requestOptions.headers["X-Title"] = "Course Forge MVP";
       }
     }
 
-    // ADDED: Request timeout
     const timeoutMs = options.timeout || 60000; // 60 second timeout
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
@@ -654,28 +525,46 @@ class LLMService {
     }
   }
 
-  /**
-   * UPDATED: Generate content chunks using dynamic prompts
-   */
   async generateChunks(courseConfig) {
-    const maxRetries = 3; // Increased retries
+    const maxRetries = 3;
     let lastError;
+
+    console.log("=== CHUNK ESTIMATION TRACING ===");
+    console.log("📊 Input course config:");
+    console.log("- Title:", courseConfig.title);
+    console.log("- Estimated Duration:", courseConfig.estimatedDuration);
+    console.log("- Target Audience:", courseConfig.targetAudience);
+    console.log(
+      "- Source Content Length:",
+      courseConfig.sourceContent ? courseConfig.sourceContent.length : 0,
+      "characters"
+    );
+
+    const expectedChunks = this.calculateExpectedChunks(
+      courseConfig.estimatedDuration
+    );
+    console.log("🎯 Expected chunk calculation:");
+    console.log("- Duration input:", courseConfig.estimatedDuration);
+    console.log("- Expected chunks:", expectedChunks);
+    console.log(
+      "- Target range:",
+      `${Math.max(6, expectedChunks - 2)}-${Math.min(60, expectedChunks + 2)}`
+    );
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        console.log(
-          `🎯 Starting chunk generation attempt ${attempt}/${maxRetries}`
-        );
+        // console.log(
+        //   `🎯 Starting chunk generation attempt ${attempt}/${maxRetries}`
+        // );
 
-        // NEW: Use dynamic prompts
         const systemPrompt = this.prompts.chunking.system;
 
-        // NEW: Build user prompt with template injection
         const userPromptTemplate = this.prompts.chunking.user;
-        const userPrompt = this.injectPromptValues(userPromptTemplate, {
+        const templateValues = {
           courseTitle: courseConfig.title,
           targetAudience:
             courseConfig.targetAudience || "Professional learners",
+          estimatedDuration: courseConfig.estimatedDuration || "45 minutes",
           learningObjectives: courseConfig.learningObjectives.map(
             (obj) => `- ${obj}`
           ),
@@ -683,21 +572,56 @@ class LLMService {
           additionalGuidance: courseConfig.additionalGuidance
             ? `**Additional Guidance:** ${courseConfig.additionalGuidance}`
             : "",
+        };
+
+        const userPrompt = this.injectPromptValues(
+          userPromptTemplate,
+          templateValues
+        );
+
+        console.log("📝 Template values being injected:");
+        Object.entries(templateValues).forEach(([key, value]) => {
+          if (key === "sourceContent") {
+            console.log(
+              `- ${key}: ${
+                typeof value === "string"
+                  ? value.substring(0, 100) + "..."
+                  : value
+              }`
+            );
+          } else {
+            console.log(`- ${key}:`, value);
+          }
         });
+
+        const promptSample =
+          userPrompt.substring(0, 1000) +
+          (userPrompt.length > 1000 ? "..." : "");
+        console.log("📋 Final prompt sample (first 1000 chars):");
+        console.log(promptSample);
+
+        if (
+          courseConfig.estimatedDuration &&
+          userPrompt.includes(courseConfig.estimatedDuration)
+        ) {
+          console.log("✅ Duration successfully injected into prompt");
+        } else {
+          console.warn("⚠️ Duration may not be properly injected");
+        }
 
         const messages = [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ];
 
-        // Adjust temperature based on attempt and use appropriate model
         const temperature = attempt === 1 ? 0.3 : 0.1;
         const model = CONFIG.getModelForTask("chunking");
 
+        console.log("🚀 Sending request to LLM...");
         const response = await this.makeRequest(messages, {
           model: model,
           temperature: temperature,
-          maxTokens: 3000,
+          maxTokens: 4000, // Increased token limit to accommodate more chunks
         });
 
         if (!response.choices || response.choices.length === 0) {
@@ -706,18 +630,17 @@ class LLMService {
 
         const content = response.choices[0].message.content;
 
-        // ALWAYS LOG THE FULL RESPONSE
-        console.log(`=== FULL AI RESPONSE (ATTEMPT ${attempt}) ===`);
-        console.log("Provider:", CONFIG.getActiveAPIProvider());
-        console.log("Model:", model);
-        console.log("Response length:", content.length);
+        const chunkTagMatches = content.match(/<chunk>/g);
+        const chunkTagCount = chunkTagMatches ? chunkTagMatches.length : 0;
+        console.log("Raw chunk tags found:", chunkTagCount);
+
         console.log("Response content:", content);
-        console.log("=== END FULL RESPONSE ===");
 
         const chunks = this.parseChunkingResponseXML(content, attempt);
-        console.log(
-          `✅ Successfully generated ${chunks.length} chunks on attempt ${attempt}`
-        );
+
+        console.log("- Expected chunks:", expectedChunks);
+        console.log("- Generated chunks:", chunks.length);
+        console.log("- Difference:", Math.abs(expectedChunks - chunks.length));
         return chunks;
       } catch (error) {
         lastError = error;
@@ -740,9 +663,25 @@ class LLMService {
     );
   }
 
-  /**
-   * FIXED & UPDATED: Generate content for a specific chunk - preserve existing ground truth and use dynamic prompts
-   */
+  calculateExpectedChunks(durationString) {
+    let minutes = 0;
+
+    if (durationString.includes("hour")) {
+      const hourMatch = durationString.match(/(\d+)\s*hour/);
+      if (hourMatch) {
+        minutes = parseInt(hourMatch[1]) * 60;
+      }
+    } else {
+      const minuteMatch = durationString.match(/(\d+)/);
+      if (minuteMatch) {
+        minutes = parseInt(minuteMatch[1]);
+      }
+    }
+    const idealChunks = Math.round(minutes / 2.5);
+
+    return Math.max(6, Math.min(60, idealChunks));
+  }
+
   async generateSlideContent(chunk, courseConfig) {
     const maxRetries = 2;
     let lastError;
@@ -753,13 +692,8 @@ class LLMService {
           `🎯 Generating content for chunk ${chunk.id}, attempt ${attempt}/${maxRetries}`
         );
 
-        // FIXED: Ensure we're using the most current ground truth from the chunk
-        console.log("🎯 Current ground truth:", chunk.groundTruth);
-
-        // NEW: Use dynamic prompts
         const systemPrompt = this.prompts.content_generation.system;
 
-        // NEW: Build user prompt with template injection
         const userPromptTemplate = this.prompts.content_generation.user;
         const userPrompt = this.injectPromptValues(userPromptTemplate, {
           slideType: chunk.slideType,
@@ -796,17 +730,6 @@ class LLMService {
 
         const content = response.choices[0].message.content;
 
-        // ALWAYS LOG CONTENT GENERATION RESPONSES
-        console.log("=== CONTENT GENERATION RESPONSE ===");
-        console.log("Provider:", CONFIG.getActiveAPIProvider());
-        console.log("Model:", model);
-        console.log("Chunk ID:", chunk.id);
-        console.log("Slide Type:", chunk.slideType);
-        console.log("Ground Truth:", chunk.groundTruth || "No ground truth");
-        console.log("Response length:", content.length);
-        console.log("Response content:", content);
-        console.log("=== END CONTENT RESPONSE ===");
-
         const parsedContent = this.parseContentResponseXML(
           content,
           chunk.slideType
@@ -835,9 +758,6 @@ class LLMService {
     );
   }
 
-  /**
-   * ADDED: Get queue status for debugging
-   */
   getQueueStatus() {
     return {
       queueLength: this.requestQueue.length,
@@ -851,9 +771,6 @@ class LLMService {
     };
   }
 
-  /**
-   * ADDED: Clear the request queue (for emergency stops)
-   */
   clearQueue() {
     const clearedCount = this.requestQueue.length;
     this.requestQueue.forEach((request) => {
@@ -863,15 +780,11 @@ class LLMService {
     console.log(`🗑️ Cleared ${clearedCount} requests from queue`);
   }
 
-  /**
-   * Parse chunking response using XML regex extraction - FIXED: Include ground truth
-   */
   parseChunkingResponseXML(content, attempt = 1) {
     try {
       console.log(`=== PARSING XML CHUNKS (Attempt ${attempt}) ===`);
       console.log("Raw content:", content);
 
-      // Extract all chunk blocks using regex
       const chunkMatches = content.match(/<chunk>([\s\S]*?)<\/chunk>/g);
 
       if (!chunkMatches || chunkMatches.length === 0) {
@@ -884,7 +797,6 @@ class LLMService {
       const chunks = chunkMatches.map((chunkBlock, index) => {
         console.log(`Processing chunk ${index}:`, chunkBlock);
 
-        // Extract individual fields using regex
         const chunk = {
           title:
             this.extractXMLValue(chunkBlock, "title") || `Chunk ${index + 1}`,
@@ -898,7 +810,6 @@ class LLMService {
           order: parseInt(this.extractXMLValue(chunkBlock, "order")) || index,
         };
 
-        // Validate slide type
         if (
           !CONFIG.SLIDE_TYPES.some((type) => type.value === chunk.slideType)
         ) {
@@ -908,7 +819,6 @@ class LLMService {
           chunk.slideType = "textAndImage";
         }
 
-        // Create final chunk object
         const finalChunk = {
           id: `chunk-${Date.now()}-${index}-${Math.floor(
             Math.random() * 1000
@@ -928,7 +838,6 @@ class LLMService {
         return finalChunk;
       });
 
-      console.log(`=== SUCCESSFULLY PARSED ${chunks.length} CHUNKS ===`);
       return chunks;
     } catch (error) {
       console.error("XML chunk parsing failed:", error);
@@ -937,15 +846,8 @@ class LLMService {
     }
   }
 
-  /**
-   * Parse content response using XML regex extraction
-   */
   parseContentResponseXML(content, slideType) {
     try {
-      console.log("=== PARSING XML CONTENT ===");
-      console.log("Slide type:", slideType);
-      console.log("Raw content:", content);
-
       // Extract content block
       const contentMatch = content.match(/<content>([\s\S]*?)<\/content>/);
       if (!contentMatch) {
@@ -987,18 +889,12 @@ class LLMService {
     }
   }
 
-  /**
-   * Extract value from XML using regex
-   */
   extractXMLValue(content, tagName) {
     const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "s");
     const match = content.match(regex);
     return match ? match[1].trim() : null;
   }
 
-  /**
-   * Extract multiple XML values (for arrays)
-   */
   extractXMLValues(content, tagName) {
     const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "gs");
     const matches = [];
@@ -1009,9 +905,6 @@ class LLMService {
     return matches;
   }
 
-  /**
-   * Parse title slide content
-   */
   parseTitleXML(content) {
     return {
       header: this.extractXMLValue(content, "header") || "",
@@ -1020,9 +913,6 @@ class LLMService {
     };
   }
 
-  /**
-   * Parse course info slide content
-   */
   parseCourseInfoXML(content) {
     return {
       header: this.extractXMLValue(content, "header") || "",
@@ -1034,9 +924,6 @@ class LLMService {
     };
   }
 
-  /**
-   * Parse text and image content
-   */
   parseTextAndImageXML(content) {
     return {
       header: this.extractXMLValue(content, "header") || "",
@@ -1048,9 +935,6 @@ class LLMService {
     };
   }
 
-  /**
-   * Parse text and bullets content
-   */
   parseTextAndBulletsXML(content) {
     return {
       header: this.extractXMLValue(content, "header") || "",
@@ -1060,9 +944,6 @@ class LLMService {
     };
   }
 
-  /**
-   * Parse icons with titles content
-   */
   parseIconsWithTitlesXML(content) {
     const iconBlocks = content.match(/<icon>([\s\S]*?)<\/icon>/g) || [];
     const icons = iconBlocks.map((block) => ({
@@ -1078,9 +959,6 @@ class LLMService {
     };
   }
 
-  /**
-   * Parse multiple choice content
-   */
   parseMultipleChoiceXML(content) {
     return {
       question: this.extractXMLValue(content, "question") || "",
@@ -1097,9 +975,6 @@ class LLMService {
     };
   }
 
-  /**
-   * Parse tabs content
-   */
   parseTabsXML(content) {
     const tabBlocks = content.match(/<tab>([\s\S]*?)<\/tab>/g) || [];
     return tabBlocks.map((block) => ({
@@ -1108,9 +983,6 @@ class LLMService {
     }));
   }
 
-  /**
-   * Parse flip cards content
-   */
   parseFlipCardsXML(content) {
     const cardBlocks = content.match(/<card>([\s\S]*?)<\/card>/g) || [];
     return cardBlocks.map((block) => ({
@@ -1119,9 +991,6 @@ class LLMService {
     }));
   }
 
-  /**
-   * Parse FAQ content
-   */
   parseFaqXML(content) {
     const faqBlocks = content.match(/<faqItem>([\s\S]*?)<\/faqItem>/g) || [];
     const items = faqBlocks.map((block) => ({
@@ -1136,9 +1005,6 @@ class LLMService {
     };
   }
 
-  /**
-   * Parse popups content
-   */
   parsePopupsXML(content) {
     const popupBlocks = content.match(/<popup>([\s\S]*?)<\/popup>/g) || [];
     return popupBlocks.map((block) => ({
@@ -1147,9 +1013,6 @@ class LLMService {
     }));
   }
 
-  /**
-   * Generate fallback chunks when parsing fails - FIXED: Include ground truth
-   */
   generateFallbackChunks(originalContent) {
     console.warn("🔄 Generating fallback chunks due to parsing failure");
 
