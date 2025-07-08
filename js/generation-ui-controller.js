@@ -92,15 +92,15 @@ class GenerationUIController {
       console.warn("Generate All button not found in DOM");
     }
 
-    // Generate selected button
-    const generateSelectedBtn = document.getElementById("generateSelectedBtn");
-    if (generateSelectedBtn) {
-      generateSelectedBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.generateSelected();
-      });
-    }
+    // // Generate selected button
+    // const generateSelectedBtn = document.getElementById("generateSelectedBtn");
+    // if (generateSelectedBtn) {
+    //   generateSelectedBtn.addEventListener("click", (e) => {
+    //     e.preventDefault();
+    //     e.stopPropagation();
+    //     this.generateSelected();
+    //   });
+    // }
 
     // Select all checkbox
     const selectAllCheckbox = document.getElementById("selectAllSlides");
@@ -314,11 +314,7 @@ class GenerationUIController {
                 }')" ${!hasContent ? "disabled" : ""}>
                   <i data-lucide="volume-2"></i> Copy Transcript
                 </button>
-                <button onclick="window.generationUIController.previewSlide('${
-                  chunk.id
-                }')" ${!hasContent ? "disabled" : ""}>
-                  <i data-lucide="eye"></i> Preview Slide
-                </button>
+                
                 <hr>
                 <button onclick="window.generationUIController.resetSlideContent('${
                   chunk.id
@@ -543,10 +539,6 @@ class GenerationUIController {
       <div class="stat-item">
         <span class="stat-label">Pending:</span>
         <span class="stat-value">${stats.pending}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">Locked:</span>
-        <span class="stat-value">${stats.locked}</span>
       </div>
     `;
   }

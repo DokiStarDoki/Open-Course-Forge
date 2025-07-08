@@ -557,7 +557,6 @@
 [contenteditable="true"] {
   transition: all 0.2s ease;
   border-radius: 4px;
-  padding: 0.25rem;
   margin: -0.25rem;
 }
 

@@ -741,10 +741,6 @@ class ChunkUIController {
         <span class="summary-value">${generated}</span>
       </div>
       <div class="summary-item">
-        <span class="summary-label">Locked:</span>
-        <span class="summary-value">${locked}</span>
-      </div>
-      <div class="summary-item">
         <span class="summary-label">With Ground Truth:</span>
         <span class="summary-value">${withGroundTruth}</span>
       </div>
