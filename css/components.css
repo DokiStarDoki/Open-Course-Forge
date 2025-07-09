@@ -1,6 +1,6 @@
 /* ===== FORM ELEMENTS ===== */
 .form-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .form-label {
@@ -39,14 +39,18 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.5rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.form-grid.small-grid {
+  grid-template-columns: 1fr 1fr 1fr;
 }
 
 .form-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 2rem;
+  margin-top: 0.5rem;
 }
 
 .action-group {
@@ -70,12 +74,12 @@
 .file-upload-area {
   border: 2px dashed #cbd5e1;
   border-radius: 0.75rem;
-  padding: 3rem;
+  padding: 0.75rem;
   text-align: center;
   background: #f8fafc;
   cursor: pointer;
   transition: all 0.3s ease;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .file-upload-area:hover {
@@ -90,9 +94,8 @@
 }
 
 .file-upload-icon {
-  font-size: 3rem;
+  font-size: 2rem;
   color: #9ca3af;
-  margin-bottom: 1rem;
 }
 
 .file-upload-text {
@@ -108,7 +111,8 @@
 }
 
 .uploaded-files {
-  margin-top: 1rem;
+  margin-top: 0.5rem;
+  gap: 10px;
 }
 
 .uploaded-file {

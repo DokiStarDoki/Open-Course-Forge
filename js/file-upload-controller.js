@@ -144,8 +144,6 @@ class FileUploadController {
       console.warn("courseFileInput element not found");
     }
 
-    // ADDED: Update UI when component initializes
-    // Use setTimeout to ensure DOM is ready
     setTimeout(() => {
       this.updateUploadedFilesUI();
     }, 100);
@@ -339,7 +337,7 @@ class FileUploadController {
     }
 
     console.log("Rendering", files.length, "files");
-    container.style.display = "block";
+    container.style.display = "flex";
     container.innerHTML = files
       .map((file) => this.renderFileItem(file))
       .join("");

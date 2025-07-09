@@ -23,7 +23,7 @@ body {
 /* ===== HEADER ===== */
 .header {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
 }
 
 .header h1 {
@@ -95,7 +95,8 @@ body {
 /* ===== TAB CONTENT ===== */
 .tab-content {
   background: white;
-  padding: 2rem;
+  padding: 1.5rem;
+  padding-top: 0.75rem;
   min-height: 600px;
 }
 

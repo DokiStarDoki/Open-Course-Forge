@@ -206,13 +206,12 @@
         <div class="tab-content">
           <!-- Tab 1: Input & Configuration -->
           <div class="tab-panel active" id="input-panel">
-            <h2 style="margin-bottom: 1.5rem; color: #1f2937">
+            <h2 style="margin-bottom: 0.5rem; color: #1f2937">
               Upload Content & Configure Course
             </h2>
 
             <!-- File Upload Section -->
             <div class="form-group">
-              <label class="form-label">Upload Source Content</label>
               <div class="file-upload-area" id="fileUploadArea">
                 <div class="file-upload-icon">
                   <i data-lucide="upload-cloud"></i>
@@ -235,7 +234,7 @@
             </div>
 
             <!-- Course Configuration -->
-            <div class="form-grid">
+            <div class="form-grid small-grid">
               <div class="form-group">
                 <label class="form-label" for="courseTitle">Course Title</label>
                 <input
@@ -256,40 +255,42 @@
                   placeholder="e.g., 45 minutes"
                 />
               </div>
+
+              <div class="form-group">
+                <label class="form-label" for="targetAudience"
+                  >Target Audience</label
+                >
+                <input
+                  type="text"
+                  id="targetAudience"
+                  class="form-input"
+                  placeholder="Describe your target audience"
+                />
+              </div>
             </div>
 
-            <div class="form-group">
-              <label class="form-label" for="targetAudience"
-                >Target Audience</label
-              >
-              <input
-                type="text"
-                id="targetAudience"
-                class="form-input"
-                placeholder="Describe your target audience"
-              />
-            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label" for="learningObjectives"
+                  >Learning Objectives</label
+                >
+                <textarea
+                  id="learningObjectives"
+                  class="form-textarea"
+                  placeholder="List the learning objectives for this course (one per line)"
+                ></textarea>
+              </div>
 
-            <div class="form-group">
-              <label class="form-label" for="learningObjectives"
-                >Learning Objectives</label
-              >
-              <textarea
-                id="learningObjectives"
-                class="form-textarea"
-                placeholder="List the learning objectives for this course (one per line)"
-              ></textarea>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="additionalGuidance"
-                >Additional Guidance for AI</label
-              >
-              <textarea
-                id="additionalGuidance"
-                class="form-textarea"
-                placeholder="Any specific instructions or preferences for content generation..."
-              ></textarea>
+              <div class="form-group">
+                <label class="form-label" for="additionalGuidance"
+                  >Additional Guidance for AI</label
+                >
+                <textarea
+                  id="additionalGuidance"
+                  class="form-textarea"
+                  placeholder="Any specific instructions or preferences for content generation..."
+                ></textarea>
+              </div>
             </div>
 
             <div class="form-actions">
