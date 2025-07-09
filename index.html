@@ -16,15 +16,13 @@
     <link rel="stylesheet" href="css/slides.css" />
     <link rel="stylesheet" href="css/utilities.css" />
 
-    <!-- FIXED: Additional styles for Generate All button and controls -->
     <style>
       /* Generation Controls Styling */
       .generation-controls {
-        margin-bottom: 2rem;
-        background: #f8fafc;
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        border: 1px solid #e2e8f0;
+        display: flex;
+        gap: 0.5rem;
+        align-items: flex-start;
+        justify-content: flex-start;
       }
 
       .generation-actions-bar {
@@ -206,10 +204,6 @@
         <div class="tab-content">
           <!-- Tab 1: Input & Configuration -->
           <div class="tab-panel active" id="input-panel">
-            <h2 style="margin-bottom: 0.5rem; color: #1f2937">
-              Upload Content & Configure Course
-            </h2>
-
             <!-- File Upload Section -->
             <div class="form-group">
               <div class="file-upload-area" id="fileUploadArea">
@@ -300,23 +294,12 @@
                   Load Existing Course
                 </button>
               </div>
-              <div>
-                <button
-                  class="btn btn-primary"
-                  id="proceedToChunkingBtn"
-                  disabled
-                >
-                  <i data-lucide="arrow-right"></i>
-                  Proceed to Chunking
-                </button>
-              </div>
             </div>
           </div>
 
           <!-- Tab 2: Content Chunking -->
           <div class="tab-panel" id="chunking-panel">
             <div class="section-header">
-              <h2>Content Chunking</h2>
               <div class="section-actions">
                 <button class="btn btn-secondary" id="addChunkBtn">
                   <i data-lucide="plus"></i>
@@ -337,40 +320,10 @@
                 </p>
               </div>
             </div>
-
-            <div class="form-actions">
-              <button class="btn btn-secondary" id="backToInputBtn">
-                <i data-lucide="arrow-left"></i>
-                Back to Input
-              </button>
-              <button
-                class="btn btn-primary"
-                id="proceedToGenerationBtn"
-                disabled
-              >
-                <i data-lucide="arrow-right"></i>
-                Proceed to Generation
-              </button>
-            </div>
           </div>
 
           <!-- Tab 3: Content Generation -->
           <div class="tab-panel" id="generation-panel">
-            <div class="section-header">
-              <h2>Content Generation</h2>
-              <div class="section-actions">
-                <button class="btn btn-secondary" id="exportJsonBtn">
-                  <i data-lucide="download"></i>
-                  Export JSON
-                </button>
-                <button class="btn btn-success" id="exportHtmlBtn">
-                  <i data-lucide="external-link"></i>
-                  Export HTML
-                </button>
-              </div>
-            </div>
-
-            <!-- FIXED: Added Generation Controls Section with Generate All Button -->
             <div class="generation-controls">
               <div class="generation-actions-bar">
                 <!-- Primary Actions -->
@@ -379,6 +332,18 @@
                   <button id="generateAllBtn" class="btn btn-primary btn-large">
                     <i data-lucide="sparkles"></i>
                     <span>Generate All</span>
+                  </button>
+                  <button class="btn btn-secondary" id="previewCourseBtn">
+                    <i data-lucide="eye"></i>
+                    Preview Course
+                  </button>
+                  <button class="btn btn-secondary" id="exportJsonBtn">
+                    <i data-lucide="download"></i>
+                    Export JSON
+                  </button>
+                  <button class="btn btn-success" id="exportHtmlBtn">
+                    <i data-lucide="external-link"></i>
+                    Export HTML
                   </button>
                 </div>
 
@@ -438,16 +403,7 @@
             </div>
 
             <div class="form-actions">
-              <button class="btn btn-secondary" id="backToChunkingBtn">
-                <i data-lucide="arrow-left"></i>
-                Back to Chunking
-              </button>
-              <div class="action-group">
-                <button class="btn btn-secondary" id="previewCourseBtn">
-                  <i data-lucide="eye"></i>
-                  Preview Course
-                </button>
-              </div>
+              <div class="action-group"></div>
             </div>
           </div>
         </div>

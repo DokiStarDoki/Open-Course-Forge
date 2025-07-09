@@ -213,19 +213,6 @@ class CourseForgeApp {
    */
   setupNavigationEvents() {
     const navigationEvents = [
-      { id: "proceedToChunkingBtn", handler: () => this.proceedToChunking() },
-      {
-        id: "backToInputBtn",
-        handler: () => this.tabManager.switchTab("input"),
-      },
-      {
-        id: "proceedToGenerationBtn",
-        handler: () => this.tabManager.switchTab("generation"),
-      },
-      {
-        id: "backToChunkingBtn",
-        handler: () => this.tabManager.switchTab("chunking"),
-      },
       { id: "rechunkBtn", handler: () => this.rechunkContent() },
       { id: "addChunkBtn", handler: () => this.chunkManager.addNewChunk() },
       { id: "exportJsonBtn", handler: () => this.exportCourseJson() },
