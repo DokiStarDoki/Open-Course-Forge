@@ -1,5 +1,6 @@
 /**
  * Chunk UI Controller - Manages chunk display and user interactions
+ * FIXED: Meatball menu, side-by-side layout, generated content display
  */
 class ChunkUIController {
   constructor(stateManager, eventSystem) {
@@ -82,7 +83,7 @@ class ChunkUIController {
       });
     }
 
-    // Global click handler to close dropdowns
+    // FIXED: Global click handler to close dropdowns
     document.addEventListener("click", (e) => {
       if (!e.target.closest(".chunk-actions-dropdown")) {
         this.closeAllDropdowns();
@@ -105,7 +106,7 @@ class ChunkUIController {
           <i data-lucide="package"></i>
           <h3>No chunks available</h3>
           <p>Generate chunks from your course content or add chunks manually</p>
-          <button class="btn btn-primary" onclick="chunkUIController.addNewChunk()">
+          <button class="btn btn-primary" onclick="window.chunkUIController.addNewChunk()">
             <i data-lucide="plus"></i> Add New Chunk
           </button>
         </div>
@@ -192,21 +193,23 @@ class ChunkUIController {
             <input type="text" 
                    class="chunk-title-input" 
                    value="${this.escapeHtml(chunk.title)}"
-                   onchange="chunkUIController.updateChunkTitle('${
+                   onchange="window.chunkUIController.updateChunkTitle('${
                      chunk.id
                    }', this.value)"
-                   onkeyup="chunkUIController.validateChunkTitle(this)"
+                   onkeyup="window.chunkUIController.validateChunkTitle(this)"
                    ${chunk.isLocked ? "disabled" : ""}>
             ${statusBadge}
           </div>
           <div class="chunk-controls">
             <button class="btn btn-sm btn-secondary" 
-                    onclick="chunkUIController.toggleChunkLock('${chunk.id}')"
+                    onclick="window.chunkUIController.toggleChunkLock('${
+                      chunk.id
+                    }')"
                     title="${chunk.isLocked ? "Unlock" : "Lock"} chunk">
               <i data-lucide="${chunk.isLocked ? "lock" : "unlock"}"></i>
             </button>
             <select class="form-select chunk-type-select" 
-                    onchange="chunkUIController.changeChunkType('${
+                    onchange="window.chunkUIController.changeChunkType('${
                       chunk.id
                     }', this.value)"
                     ${chunk.isLocked ? "disabled" : ""}>
@@ -214,30 +217,35 @@ class ChunkUIController {
             </select>
             <div class="chunk-actions-dropdown">
               <button class="btn btn-secondary btn-sm dropdown-toggle" 
-                      onclick="chunkUIController.toggleChunkActions('${
+                      onclick="window.chunkUIController.toggleChunkActions('${
                         chunk.id
-                      }', this)">
+                      }', this)"
+                      type="button">
                 <i data-lucide="more-horizontal"></i>
               </button>
               <div class="dropdown-menu" id="actions-${chunk.id}">
-                <button onclick="chunkUIController.editChunk('${chunk.id}')">
+                <button onclick="window.chunkUIController.editChunk('${
+                  chunk.id
+                }')">
                   <i data-lucide="edit-3"></i> Edit Content
                 </button>
-                <button onclick="chunkUIController.duplicateChunk('${
+                <button onclick="window.chunkUIController.duplicateChunk('${
                   chunk.id
                 }')">
                   <i data-lucide="copy"></i> Duplicate
                 </button>
-                <button onclick="chunkUIController.moveChunkUp('${chunk.id}')">
+                <button onclick="window.chunkUIController.moveChunkUp('${
+                  chunk.id
+                }')">
                   <i data-lucide="arrow-up"></i> Move Up
                 </button>
-                <button onclick="chunkUIController.moveChunkDown('${
+                <button onclick="window.chunkUIController.moveChunkDown('${
                   chunk.id
                 }')">
                   <i data-lucide="arrow-down"></i> Move Down
                 </button>
                 <hr>
-                <button onclick="chunkUIController.removeChunk('${
+                <button onclick="window.chunkUIController.removeChunk('${
                   chunk.id
                 }')" class="danger">
                   <i data-lucide="trash-2"></i> Remove
@@ -252,28 +260,36 @@ class ChunkUIController {
   }
 
   /**
-   * Render chunk content preview - UPDATED WITH DIRECTLY EDITABLE GROUND TRUTH
+   * FIXED: Render chunk content preview with side-by-side layout
    */
   renderChunkContent(chunk) {
     if (!chunk.sourceContent && !chunk.generatedContent && !chunk.groundTruth) {
       return "";
     }
 
-    let contentPreview = "";
+    // FIXED: Create side-by-side layout for source and ground truth
+    const sourceAndGroundTruthRow = this.renderSourceAndGroundTruthRow(chunk);
 
-    if (chunk.sourceContent) {
-      const preview = chunk.sourceContent.substring(0, 200);
-      contentPreview = `
-      <div class="chunk-source-preview">
-        <strong>Source:</strong> ${this.escapeHtml(preview)}${
-        chunk.sourceContent.length > 200 ? "..." : ""
-      }
+    return `
+      <div class="chunk-content-preview">
+        ${sourceAndGroundTruthRow}
       </div>
     `;
-    }
+  }
 
-    // UPDATED: Ground truth display with direct inline editing
-    const groundTruthSection = `
+  /**
+   * NEW: Render source and ground truth in side-by-side layout
+   */
+  renderSourceAndGroundTruthRow(chunk) {
+    const sourceContent = chunk.sourceContent
+      ? `<div class="chunk-source-preview">
+        <strong>Source:</strong> ${this.escapeHtml(
+          chunk.sourceContent.substring(0, 200)
+        )}${chunk.sourceContent.length > 200 ? "..." : ""}
+      </div>`
+      : "";
+
+    const groundTruthContent = `
       <div class="chunk-ground-truth-section">
         <div class="ground-truth-header">
           <strong><i data-lucide="target"></i> Ground Truth:</strong>
@@ -286,40 +302,30 @@ class ChunkUIController {
              contenteditable="true"
              data-chunk-id="${chunk.id}"
              data-field="groundTruth"
-             onblur="chunkUIController.saveInlineEdit(this)"
-             onkeydown="chunkUIController.handleInlineEditKeydown(event, this)"
-             onpaste="chunkUIController.handlePaste(event, this)"
+             onblur="window.chunkUIController.saveInlineEdit(this)"
+             onkeydown="window.chunkUIController.handleInlineEditKeydown(event, this)"
+             onpaste="window.chunkUIController.handlePaste(event, this)"
              placeholder="Describe what this slide should cover and its purpose...">
           ${this.escapeHtml(chunk.groundTruth || "")}
         </div>
       </div>
     `;
 
-    contentPreview += groundTruthSection;
-
-    if (chunk.generatedContent) {
-      const contentSummary = this.generateContentSummary(
-        chunk.generatedContent,
-        chunk.slideType
-      );
-      contentPreview += `
-      <div class="chunk-generated-preview">
-        <strong>Generated:</strong> ${contentSummary}
+    return `
+      <div class="chunk-content-row">
+        <div class="chunk-content-left">
+          ${groundTruthContent}
+        </div>
+        <div class="chunk-content-right">
+        ${sourceContent}
+          
+        </div>
       </div>
     `;
-    }
-
-    return contentPreview
-      ? `
-    <div class="chunk-content-preview">
-      ${contentPreview}
-    </div>
-  `
-      : "";
   }
 
   /**
-   * UPDATED: Save inline edit for ground truth
+   * FIXED: Save inline edit for ground truth
    */
   saveInlineEdit(element) {
     const chunkId = element.dataset.chunkId;
@@ -366,7 +372,7 @@ class ChunkUIController {
   }
 
   /**
-   * UPDATED: Handle keydown events during inline editing
+   * Handle keydown events during inline editing
    */
   handleInlineEditKeydown(event, element) {
     const chunkId = element.dataset.chunkId;
@@ -515,36 +521,58 @@ class ChunkUIController {
   }
 
   /**
-   * Generate content summary for preview
+   * FIXED: Generate content summary for preview - handles new LLM format
    */
   generateContentSummary(content, slideType) {
+    if (!content || typeof content !== "object") {
+      return "Invalid content format";
+    }
+
     switch (slideType) {
+      case "title":
+        return content.header
+          ? this.escapeHtml(content.header.substring(0, 100)) + "..."
+          : "Title slide content";
+
+      case "courseInfo":
+        return content.text
+          ? this.escapeHtml(content.text.substring(0, 100)) + "..."
+          : "Course information content";
+
       case "textAndImage":
         return content.text
           ? this.escapeHtml(content.text.substring(0, 100)) + "..."
           : "Text and image content";
+
       case "textAndBullets":
         const bulletCount = content.bullets ? content.bullets.length : 0;
         return `${bulletCount} bullet points`;
+
       case "multipleChoice":
         return content.question
           ? this.escapeHtml(content.question.substring(0, 80)) + "..."
           : "Multiple choice question";
+
       case "iconsWithTitles":
         const iconCount = content.icons ? content.icons.length : 0;
         return `${iconCount} icon items`;
+
       case "tabs":
         const tabCount = Array.isArray(content) ? content.length : 0;
         return `${tabCount} tabs`;
+
       case "flipCards":
         const cardCount = Array.isArray(content) ? content.length : 0;
         return `${cardCount} flip cards`;
+
       case "faq":
         const faqCount = content.items ? content.items.length : 0;
         return `${faqCount} FAQ items`;
+
       case "popups":
         const popupCount = Array.isArray(content) ? content.length : 0;
         return `${popupCount} popup items`;
+
       default:
         return "Generated content";
     }
@@ -662,10 +690,15 @@ class ChunkUIController {
   }
 
   /**
-   * Toggle chunk actions dropdown
+   * FIXED: Toggle chunk actions dropdown
    */
   toggleChunkActions(chunkId, button) {
     const dropdown = document.getElementById(`actions-${chunkId}`);
+    if (!dropdown) {
+      console.error(`Dropdown not found: actions-${chunkId}`);
+      return;
+    }
+
     const isOpen = dropdown.classList.contains("show");
 
     // Close all dropdowns first
@@ -675,6 +708,11 @@ class ChunkUIController {
     if (!isOpen) {
       dropdown.classList.add("show");
       button.setAttribute("aria-expanded", "true");
+    }
+
+    // Prevent event propagation
+    if (window.event) {
+      window.event.stopPropagation();
     }
   }
 
