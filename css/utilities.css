@@ -212,10 +212,6 @@
     align-items: stretch;
   }
 
-  .generation-controls {
-    justify-content: flex-start;
-  }
-
   .icons-grid {
     grid-template-columns: 1fr;
   }
