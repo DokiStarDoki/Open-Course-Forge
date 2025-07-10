@@ -1,5 +1,5 @@
 /**
- * Course Forge MVP - Main Application with Real AI Integration
+ * Course Forge MVP - Main Application with Real AI Integration and Interactive Slides
  * Single-screen course creation interface with learning science principles
  */
 
@@ -9,6 +9,7 @@ class CourseForgeApp {
     this.stateManager = new StateManager();
     this.eventSystem = new EventSystem();
     this.llmService = new SimpleLLMService();
+    this.slideComponents = new SlideComponents();
 
     // UI state
     this.draggedChunk = null;
@@ -49,6 +50,9 @@ class CourseForgeApp {
         );
       }
 
+      // Setup slide components integration
+      this.setupSlideComponentsIntegration();
+
       // Restore UI from state
       this.populateFormFromState();
       this.updateProgress();
@@ -63,6 +67,136 @@ class CourseForgeApp {
         "Failed to initialize application: " + error.message
       );
     }
+  }
+
+  setupSlideComponentsIntegration() {
+    // Integrate slide components with the main app
+    this.slideComponents.app = this;
+
+    // Set up content update handlers
+    this.slideComponents.updateContent = (chunkId, field, value) => {
+      this.updateSlideContent(chunkId, field, value);
+    };
+
+    this.slideComponents.updateBullet = (chunkId, index, value) => {
+      this.updateSlideBullet(chunkId, index, value);
+    };
+
+    this.slideComponents.addBullet = (chunkId) => {
+      this.addSlideBullet(chunkId);
+    };
+
+    this.slideComponents.deleteBullet = (chunkId, index) => {
+      this.deleteSlideBullet(chunkId, index);
+    };
+
+    this.slideComponents.updateCard = (chunkId, index, side, value) => {
+      this.updateSlideCard(chunkId, index, side, value);
+    };
+
+    this.slideComponents.addCard = (chunkId) => {
+      this.addSlideCard(chunkId);
+    };
+
+    this.slideComponents.deleteCard = (chunkId, index) => {
+      this.deleteSlideCard(chunkId, index);
+    };
+
+    this.slideComponents.updateTab = (chunkId, index, field, value) => {
+      this.updateSlideTab(chunkId, index, field, value);
+    };
+
+    this.slideComponents.addTab = (chunkId) => {
+      this.addSlideTab(chunkId);
+    };
+
+    this.slideComponents.deleteTab = (chunkId, index) => {
+      this.deleteSlideTab(chunkId, index);
+    };
+
+    this.slideComponents.updateIcon = (chunkId, index, field, value) => {
+      this.updateSlideIcon(chunkId, index, field, value);
+    };
+
+    this.slideComponents.addIcon = (chunkId) => {
+      this.addSlideIcon(chunkId);
+    };
+
+    this.slideComponents.deleteIcon = (chunkId, index) => {
+      this.deleteSlideIcon(chunkId, index);
+    };
+
+    this.slideComponents.updateFAQItem = (chunkId, index, field, value) => {
+      this.updateSlideFAQItem(chunkId, index, field, value);
+    };
+
+    this.slideComponents.addFAQItem = (chunkId) => {
+      this.addSlideFAQItem(chunkId);
+    };
+
+    this.slideComponents.deleteFAQItem = (chunkId, index) => {
+      this.deleteSlideFAQItem(chunkId, index);
+    };
+
+    this.slideComponents.updatePopup = (chunkId, index, field, value) => {
+      this.updateSlidePopup(chunkId, index, field, value);
+    };
+
+    this.slideComponents.addPopup = (chunkId) => {
+      this.addSlidePopup(chunkId);
+    };
+
+    this.slideComponents.deletePopup = (chunkId, index) => {
+      this.deleteSlidePopup(chunkId, index);
+    };
+
+    this.slideComponents.updateOption = (chunkId, index, value) => {
+      this.updateSlideOption(chunkId, index, value);
+    };
+
+    this.slideComponents.addOption = (chunkId) => {
+      this.addSlideOption(chunkId);
+    };
+
+    this.slideComponents.deleteOption = (chunkId, index) => {
+      this.deleteSlideOption(chunkId, index);
+    };
+
+    this.slideComponents.setCorrectAnswer = (chunkId, index) => {
+      this.setSlideCorrectAnswer(chunkId, index);
+    };
+
+    this.slideComponents.updateFeedback = (chunkId, type, value) => {
+      this.updateSlideFeedback(chunkId, type, value);
+    };
+
+    this.slideComponents.updateObjective = (chunkId, index, value) => {
+      this.updateSlideObjective(chunkId, index, value);
+    };
+
+    this.slideComponents.addObjective = (chunkId) => {
+      this.addSlideObjective(chunkId);
+    };
+
+    this.slideComponents.updateGenericContent = (chunkId, value) => {
+      this.updateSlideGenericContent(chunkId, value);
+    };
+
+    this.slideComponents.regenerateContent = (chunkId) => {
+      this.generateChunkContent(chunkId);
+    };
+
+    this.slideComponents.duplicateSlide = (chunkId) => {
+      this.duplicateChunk(chunkId);
+    };
+
+    this.slideComponents.previewSlide = (chunkId) => {
+      this.previewSingleSlide(chunkId);
+    };
+
+    this.slideComponents.generateContent = (chunkId) => {
+      this.generateChunkContent(chunkId);
+    };
   }
 
   setupEventListeners() {
@@ -576,7 +710,9 @@ class CourseForgeApp {
       title: chunk.title + " (Copy)",
       order: chunks.length,
       isLocked: false,
-      generatedContent: null,
+      generatedContent: chunk.generatedContent
+        ? { ...chunk.generatedContent }
+        : null,
       createdAt: new Date().toISOString(),
     };
 
@@ -695,6 +831,525 @@ class CourseForgeApp {
     this.scheduleAutoSave();
   }
 
+  // NEW: Slide content update methods
+  updateSlideContent(chunkId, field, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    chunk.generatedContent[field] = value;
+    this.stateManager.setState("chunks", chunks);
+    this.scheduleAutoSave();
+
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log(`Updated slide content: ${chunkId}.${field} = ${value}`);
+    }
+  }
+
+  updateSlideBullet(chunkId, index, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent || !chunk.generatedContent.bullets)
+      return;
+
+    chunk.generatedContent.bullets[index] = value;
+    this.stateManager.setState("chunks", chunks);
+    this.scheduleAutoSave();
+  }
+
+  addSlideBullet(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    if (!chunk.generatedContent.bullets) {
+      chunk.generatedContent.bullets = [];
+    }
+
+    chunk.generatedContent.bullets.push("New bullet point");
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  deleteSlideBullet(chunkId, index) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent || !chunk.generatedContent.bullets)
+      return;
+
+    chunk.generatedContent.bullets.splice(index, 1);
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  updateSlideCard(chunkId, index, side, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (
+      !chunk ||
+      !chunk.generatedContent ||
+      !Array.isArray(chunk.generatedContent)
+    )
+      return;
+
+    if (chunk.generatedContent[index]) {
+      chunk.generatedContent[index][side] = value;
+      this.stateManager.setState("chunks", chunks);
+      this.scheduleAutoSave();
+    }
+  }
+
+  addSlideCard(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    if (!Array.isArray(chunk.generatedContent)) {
+      chunk.generatedContent = [];
+    }
+
+    chunk.generatedContent.push({
+      front: "New card front",
+      back: "New card back",
+    });
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  deleteSlideCard(chunkId, index) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (
+      !chunk ||
+      !chunk.generatedContent ||
+      !Array.isArray(chunk.generatedContent)
+    )
+      return;
+
+    chunk.generatedContent.splice(index, 1);
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  updateSlideTab(chunkId, index, field, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (
+      !chunk ||
+      !chunk.generatedContent ||
+      !Array.isArray(chunk.generatedContent)
+    )
+      return;
+
+    if (chunk.generatedContent[index]) {
+      chunk.generatedContent[index][field] = value;
+      this.stateManager.setState("chunks", chunks);
+      this.scheduleAutoSave();
+    }
+  }
+
+  addSlideTab(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    if (!Array.isArray(chunk.generatedContent)) {
+      chunk.generatedContent = [];
+    }
+
+    chunk.generatedContent.push({
+      title: "New Tab",
+      content: "New tab content",
+    });
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  deleteSlideTab(chunkId, index) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (
+      !chunk ||
+      !chunk.generatedContent ||
+      !Array.isArray(chunk.generatedContent)
+    )
+      return;
+
+    chunk.generatedContent.splice(index, 1);
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  updateSlideIcon(chunkId, index, field, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent || !chunk.generatedContent.icons)
+      return;
+
+    if (chunk.generatedContent.icons[index]) {
+      chunk.generatedContent.icons[index][field] = value;
+      this.stateManager.setState("chunks", chunks);
+      this.scheduleAutoSave();
+    }
+  }
+
+  addSlideIcon(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    if (!chunk.generatedContent.icons) {
+      chunk.generatedContent.icons = [];
+    }
+
+    chunk.generatedContent.icons.push({
+      icon: "📋",
+      title: "New Icon",
+      description: "New icon description",
+    });
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  deleteSlideIcon(chunkId, index) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent || !chunk.generatedContent.icons)
+      return;
+
+    chunk.generatedContent.icons.splice(index, 1);
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  updateSlideFAQItem(chunkId, index, field, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent || !chunk.generatedContent.items)
+      return;
+
+    if (chunk.generatedContent.items[index]) {
+      chunk.generatedContent.items[index][field] = value;
+      this.stateManager.setState("chunks", chunks);
+      this.scheduleAutoSave();
+    }
+  }
+
+  addSlideFAQItem(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    if (!chunk.generatedContent.items) {
+      chunk.generatedContent.items = [];
+    }
+
+    chunk.generatedContent.items.push({
+      question: "New question",
+      answer: "New answer",
+    });
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  deleteSlideFAQItem(chunkId, index) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent || !chunk.generatedContent.items)
+      return;
+
+    chunk.generatedContent.items.splice(index, 1);
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  updateSlidePopup(chunkId, index, field, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (
+      !chunk ||
+      !chunk.generatedContent ||
+      !Array.isArray(chunk.generatedContent)
+    )
+      return;
+
+    if (chunk.generatedContent[index]) {
+      chunk.generatedContent[index][field] = value;
+      this.stateManager.setState("chunks", chunks);
+      this.scheduleAutoSave();
+    }
+  }
+
+  addSlidePopup(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    if (!Array.isArray(chunk.generatedContent)) {
+      chunk.generatedContent = [];
+    }
+
+    chunk.generatedContent.push({
+      title: "New Popup",
+      content: "New popup content",
+    });
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  deleteSlidePopup(chunkId, index) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (
+      !chunk ||
+      !chunk.generatedContent ||
+      !Array.isArray(chunk.generatedContent)
+    )
+      return;
+
+    chunk.generatedContent.splice(index, 1);
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  updateSlideOption(chunkId, index, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent || !chunk.generatedContent.options)
+      return;
+
+    chunk.generatedContent.options[index] = value;
+    this.stateManager.setState("chunks", chunks);
+    this.scheduleAutoSave();
+  }
+
+  addSlideOption(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    if (!chunk.generatedContent.options) {
+      chunk.generatedContent.options = [];
+    }
+
+    chunk.generatedContent.options.push("New option");
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  deleteSlideOption(chunkId, index) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent || !chunk.generatedContent.options)
+      return;
+
+    chunk.generatedContent.options.splice(index, 1);
+    // Adjust correct answer if needed
+    if (chunk.generatedContent.correctAnswer >= index) {
+      chunk.generatedContent.correctAnswer = Math.max(
+        0,
+        chunk.generatedContent.correctAnswer - 1
+      );
+    }
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  setSlideCorrectAnswer(chunkId, index) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    chunk.generatedContent.correctAnswer = index;
+    this.stateManager.setState("chunks", chunks);
+    this.scheduleAutoSave();
+  }
+
+  updateSlideFeedback(chunkId, type, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    if (!chunk.generatedContent.feedback) {
+      chunk.generatedContent.feedback = {};
+    }
+
+    chunk.generatedContent.feedback[type] = value;
+    this.stateManager.setState("chunks", chunks);
+    this.scheduleAutoSave();
+  }
+
+  updateSlideObjective(chunkId, index, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent || !chunk.generatedContent.objectives)
+      return;
+
+    chunk.generatedContent.objectives[index] = value;
+    this.stateManager.setState("chunks", chunks);
+    this.scheduleAutoSave();
+  }
+
+  addSlideObjective(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) return;
+
+    if (!chunk.generatedContent.objectives) {
+      chunk.generatedContent.objectives = [];
+    }
+
+    chunk.generatedContent.objectives.push("New objective");
+    this.stateManager.setState("chunks", chunks);
+    this.renderChunks();
+    this.scheduleAutoSave();
+  }
+
+  updateSlideGenericContent(chunkId, value) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk) return;
+
+    try {
+      chunk.generatedContent = JSON.parse(value);
+      this.stateManager.setState("chunks", chunks);
+      this.scheduleAutoSave();
+    } catch (error) {
+      console.error("Invalid JSON in generic content:", error);
+      StatusManager.showError("Invalid JSON format");
+    }
+  }
+
+  previewSingleSlide(chunkId) {
+    const chunks = this.stateManager.getState("chunks") || [];
+    const chunk = chunks.find((c) => c.id === chunkId);
+
+    if (!chunk || !chunk.generatedContent) {
+      StatusManager.showError("No content to preview");
+      return;
+    }
+
+    const previewWindow = window.open(
+      "",
+      "slidePreview",
+      "width=800,height=600,scrollbars=yes"
+    );
+
+    if (!previewWindow) {
+      StatusManager.showError(
+        "Popup blocked. Please allow popups for preview."
+      );
+      return;
+    }
+
+    const slideHtml = this.slideComponents.renderSlideComponent(chunk, false);
+
+    previewWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Preview: ${this.escapeHtml(chunk.title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          ${this.getSlideComponentsCSS()}
+        </style>
+      </head>
+      <body>
+        ${slideHtml}
+        <script>
+          // Add slide components functionality
+          ${this.getSlideComponentsJS()}
+        </script>
+      </body>
+      </html>
+    `);
+
+    previewWindow.document.close();
+    previewWindow.focus();
+  }
+
+  getSlideComponentsCSS() {
+    // Return the CSS from the slide components
+    return `
+      /* Basic slide styles for preview */
+      .slide-component { background: white; padding: 20px; border-radius: 8px; }
+      .slide-title { font-size: 24px; font-weight: 600; margin-bottom: 16px; }
+      .slide-content { font-size: 16px; line-height: 1.6; }
+      .flip-card { perspective: 1000px; width: 250px; height: 200px; margin: 10px; }
+      .flip-card-inner { position: relative; width: 100%; height: 100%; transition: transform 0.6s; transform-style: preserve-3d; }
+      .flip-card-inner.flipped { transform: rotateY(180deg); }
+      .flip-card-front, .flip-card-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; align-items: center; justify-content: center; padding: 20px; border-radius: 8px; }
+      .flip-card-front { background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%); color: white; }
+      .flip-card-back { background: linear-gradient(135deg, #00b894 0%, #00a085 100%); color: white; transform: rotateY(180deg); }
+      .tab-headers { display: flex; border-bottom: 2px solid #e0e0e0; }
+      .tab-header { padding: 12px 20px; cursor: pointer; border-bottom: 2px solid transparent; }
+      .tab-header.active { border-bottom-color: #007bff; }
+      .tab-panel { display: none; padding: 20px; }
+      .tab-panel.active { display: block; }
+    `;
+  }
+
+  getSlideComponentsJS() {
+    // Return minimal JS for preview functionality
+    return `
+      function flipCard(chunkId, cardIndex) {
+        const card = document.getElementById('flip-card-' + chunkId + '-' + cardIndex);
+        if (card) card.classList.toggle('flipped');
+      }
+      function switchTab(chunkId, tabIndex) {
+        const panels = document.querySelectorAll('[id^="tab-' + chunkId + '-"]');
+        panels.forEach(p => p.classList.remove('active'));
+        const selectedPanel = document.getElementById('tab-' + chunkId + '-' + tabIndex);
+        if (selectedPanel) selectedPanel.classList.add('active');
+        const headers = document.querySelectorAll('[onclick*="switchTab"]');
+        headers.forEach(h => h.classList.remove('active'));
+        const selectedHeader = document.querySelector('[onclick*="switchTab(\'' + chunkId + '\', ' + tabIndex + ')"]');
+        if (selectedHeader) selectedHeader.classList.add('active');
+      }
+    `;
+  }
+
   renderChunks() {
     const container = document.getElementById("chunks-container");
     let emptyState = document.getElementById("empty-state");
@@ -706,7 +1361,7 @@ class CourseForgeApp {
     }
 
     if (chunks.length === 0) {
-      // Create empty state if it doesn't exist (it gets removed when we render chunks)
+      // Create empty state if it doesn't exist
       if (!emptyState) {
         emptyState = document.createElement("div");
         emptyState.id = "empty-state";
@@ -750,8 +1405,10 @@ class CourseForgeApp {
     const hasContent = chunk.generatedContent;
     const hasSourceContent =
       chunk.sourceContent && chunk.sourceContent.trim().length > 0;
+
+    // Use the new slide components system for rendering content
     const contentPreview = hasContent
-      ? this.generateContentPreview(chunk.generatedContent, chunk.slideType)
+      ? this.slideComponents.renderSlideComponent(chunk, true)
       : '<span class="text-muted">No slide content generated yet</span>';
 
     // Learning science metadata
@@ -855,150 +1512,18 @@ class CourseForgeApp {
         </div>
         
         <div class="chunk-section">
-          <h4>Generated Slide Content <span class="text-muted">(AI-generated, pedagogically optimized)</span></h4>
-          <div class="slide-type-content ${hasContent ? "" : "empty"}">
+          <h4>Interactive Slide Content <span class="text-muted">(Editable, visual presentation)</span></h4>
+          <div class="slide-content-container">
             ${contentPreview}
           </div>
           ${
             !hasContent && hasSourceContent
-              ? "<button onclick=\"courseForge.generateChunkContent('" +
-                chunk.id +
-                '\')" class="btn btn-primary mt-2">Generate AI Slide Content from Source</button>'
+              ? `<button onclick="courseForge.generateChunkContent('${chunk.id}')" class="btn btn-primary mt-2">Generate AI Slide Content from Source</button>`
               : ""
           }
         </div>
       </div>
     `;
-  }
-
-  generateContentPreview(content, slideType) {
-    if (!content) return '<span class="text-muted">No content generated</span>';
-
-    try {
-      switch (slideType) {
-        case "title":
-          return `<h3>${this.escapeHtml(
-            content.header || ""
-          )}</h3><p>${this.escapeHtml(content.text || "")}</p>`;
-
-        case "courseInfo":
-          return `<h3>${this.escapeHtml(
-            content.header || ""
-          )}</h3><p>${this.escapeHtml(
-            content.text || ""
-          )}</p><p><strong>Duration:</strong> ${this.escapeHtml(
-            content.duration || ""
-          )}</p>`;
-
-        case "textAndBullets":
-          const bullets = (content.bullets || [])
-            .map((bullet) => `<li>${this.escapeHtml(bullet)}</li>`)
-            .join("");
-          return `<h3>${this.escapeHtml(
-            content.header || ""
-          )}</h3><p>${this.escapeHtml(content.text || "")}</p>${
-            bullets ? `<ul>${bullets}</ul>` : ""
-          }`;
-
-        case "textAndImage":
-          return `<h3>${this.escapeHtml(
-            content.header || ""
-          )}</h3><p>${this.escapeHtml(content.text || "")}</p>${
-            content.image ? "<p><em>Image: " + content.image + "</em></p>" : ""
-          }`;
-
-        case "multipleChoice":
-          const options = (content.options || [])
-            .map(
-              (option, idx) =>
-                `<li ${
-                  idx === content.correctAnswer
-                    ? 'style="font-weight: bold;"'
-                    : ""
-                }>${this.escapeHtml(option)}</li>`
-            )
-            .join("");
-          return `<h3>Question:</h3><p>${this.escapeHtml(
-            content.question || ""
-          )}</p>${options ? `<ol>${options}</ol>` : ""}`;
-
-        case "iconsWithTitles":
-          const icons = (content.icons || [])
-            .map(
-              (icon) =>
-                `<div><strong>${this.escapeHtml(
-                  icon.title || ""
-                )}</strong>: ${this.escapeHtml(icon.description || "")}</div>`
-            )
-            .join("");
-          return `<h3>${this.escapeHtml(content.header || "")}</h3>${icons}`;
-
-        case "tabs":
-          if (Array.isArray(content)) {
-            const tabs = content
-              .map(
-                (tab) =>
-                  `<div><strong>${this.escapeHtml(
-                    tab.title || ""
-                  )}</strong>: ${this.escapeHtml(tab.content || "")}</div>`
-              )
-              .join("");
-            return tabs;
-          }
-          break;
-
-        case "flipCards":
-          if (Array.isArray(content)) {
-            const cards = content
-              .map(
-                (card) =>
-                  `<div><strong>Front:</strong> ${this.escapeHtml(
-                    card.front || ""
-                  )}<br><strong>Back:</strong> ${this.escapeHtml(
-                    card.back || ""
-                  )}</div>`
-              )
-              .join("");
-            return cards;
-          }
-          break;
-
-        case "faq":
-          const faqItems = (content.items || [])
-            .map(
-              (item) =>
-                `<div><strong>Q:</strong> ${this.escapeHtml(
-                  item.question || ""
-                )}<br><strong>A:</strong> ${this.escapeHtml(
-                  item.answer || ""
-                )}</div>`
-            )
-            .join("");
-          return `<h3>${this.escapeHtml(content.header || "")}</h3>${faqItems}`;
-
-        case "popups":
-          if (Array.isArray(content)) {
-            const popups = content
-              .map(
-                (popup) =>
-                  `<div><strong>${this.escapeHtml(
-                    popup.title || ""
-                  )}</strong>: ${this.escapeHtml(popup.content || "")}</div>`
-              )
-              .join("");
-            return popups;
-          }
-          break;
-
-        default:
-          return `<p>${this.escapeHtml(JSON.stringify(content))}</p>`;
-      }
-    } catch (error) {
-      console.error("Error generating content preview:", error);
-      return '<span class="text-danger">Error generating preview</span>';
-    }
-
-    return '<span class="text-muted">Preview not available</span>';
   }
 
   setupChunkEventListeners() {
@@ -1088,12 +1613,6 @@ class CourseForgeApp {
     }
 
     const config = this.stateManager.getState("courseConfig");
-    const previewData = {
-      course: config,
-      chunks: chunksWithContent,
-    };
-
-    // Create a simple preview window
     const previewWindow = window.open(
       "",
       "coursePreview",
@@ -1107,65 +1626,50 @@ class CourseForgeApp {
       return;
     }
 
+    const slidesHtml = chunksWithContent
+      .map((chunk, index) => {
+        const slideHtml = this.slideComponents.renderSlideComponent(
+          chunk,
+          false
+        );
+        return `
+          <div class="preview-slide" data-slide="${index}">
+            <div class="slide-number">Slide ${index + 1}</div>
+            ${slideHtml}
+          </div>
+        `;
+      })
+      .join("");
+
     previewWindow.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
         <title>Preview: ${this.escapeHtml(config.title)}</title>
         <style>
-          body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
-          .chunk { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
-          .chunk-title { color: #333; margin-bottom: 15px; }
-          .chunk-content { margin-bottom: 15px; }
-          .chunk-type { background: #f0f0f0; padding: 5px 10px; border-radius: 4px; font-size: 12px; }
-          .chunk-metadata { background: #f8f9fa; padding: 10px; margin-bottom: 10px; border-radius: 4px; font-size: 12px; }
-          .blooms-level { padding: 2px 6px; border-radius: 3px; font-weight: bold; }
-          .blooms-remember { background: #e3f2fd; color: #1565c0; }
-          .blooms-understand { background: #f3e5f5; color: #7b1fa2; }
-          .blooms-apply { background: #e8f5e8; color: #2e7d32; }
-          .blooms-analyze { background: #fff3e0; color: #ef6c00; }
-          .blooms-evaluate { background: #fce4ec; color: #c2185b; }
-          .blooms-create { background: #f1f8e9; color: #558b2f; }
+          body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+          .preview-header { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+          .preview-slide { margin-bottom: 30px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
+          .slide-number { background: #007bff; color: white; padding: 10px 20px; font-weight: 600; }
+          ${this.getSlideComponentsCSS()}
         </style>
       </head>
       <body>
-        <h1>${this.escapeHtml(config.title)}</h1>
-        <p><strong>Duration:</strong> ${this.escapeHtml(
-          config.estimatedDuration
-        )}</p>
-        <p><strong>Audience:</strong> ${this.escapeHtml(
-          config.targetAudience
-        )}</p>
-        ${chunksWithContent
-          .map(
-            (chunk, index) => `
-          <div class="chunk">
-            <div class="chunk-metadata">
-              <span class="blooms-level blooms-${
-                chunk.bloomsLevel || "understand"
-              }">${chunk.bloomsLevel || "understand"}</span>
-              | Load: ${chunk.cognitiveLoad || "medium"}
-              | ${chunk.interactionLevel || "active"}
-              ${
-                chunk.assessmentType && chunk.assessmentType !== "none"
-                  ? "| " + chunk.assessmentType
-                  : ""
-              }
-            </div>
-            <h2 class="chunk-title">${index + 1}. ${this.escapeHtml(
-              chunk.title
-            )}</h2>
-            <div class="chunk-content">${this.generateContentPreview(
-              chunk.generatedContent,
-              chunk.slideType
-            )}</div>
-            <div class="chunk-type">Type: ${this.getSlideTypeLabel(
-              chunk.slideType
-            )}</div>
-          </div>
-        `
-          )
-          .join("")}
+        <div class="preview-header">
+          <h1>${this.escapeHtml(config.title)}</h1>
+          <p><strong>Duration:</strong> ${this.escapeHtml(
+            config.estimatedDuration
+          )}</p>
+          <p><strong>Audience:</strong> ${this.escapeHtml(
+            config.targetAudience
+          )}</p>
+        </div>
+        
+        ${slidesHtml}
+        
+        <script>
+          ${this.getSlideComponentsJS()}
+        </script>
       </body>
       </html>
     `);
@@ -1207,6 +1711,31 @@ class CourseForgeApp {
   }
 
   generateHTMLExport(config, chunks) {
+    const slidesHtml = chunks
+      .map((chunk, index) => {
+        const slideHtml = this.slideComponents.renderSlideComponent(
+          chunk,
+          false
+        );
+        return `
+          <div class="export-slide" data-slide="${index}">
+            <div class="slide-header-export">
+              <h3>Slide ${index + 1}: ${this.escapeHtml(chunk.title)}</h3>
+              <div class="slide-meta">
+                <span class="slide-type">${this.getSlideTypeLabel(
+                  chunk.slideType
+                )}</span>
+                <span class="blooms-level blooms-${
+                  chunk.bloomsLevel || "understand"
+                }">${chunk.bloomsLevel || "understand"}</span>
+              </div>
+            </div>
+            ${slideHtml}
+          </div>
+        `;
+      })
+      .join("");
+
     return `
       <!DOCTYPE html>
       <html lang="en">
@@ -1215,29 +1744,21 @@ class CourseForgeApp {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${this.escapeHtml(config.title)}</title>
         <style>
-          body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
-          .header { text-align: center; margin-bottom: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
-          .chunk { margin-bottom: 40px; padding: 20px; border: 1px solid #dee2e6; border-radius: 8px; }
-          .chunk-title { color: #333; margin-bottom: 20px; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-          .chunk-content { margin-bottom: 15px; }
-          .slide-type { background: #e9ecef; padding: 5px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 10px; display: inline-block; }
-          .chunk-metadata { background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; }
-          .blooms-level { padding: 2px 6px; border-radius: 3px; font-weight: bold; margin-right: 8px; }
-          .blooms-remember { background: #e3f2fd; color: #1565c0; }
-          .blooms-understand { background: #f3e5f5; color: #7b1fa2; }
-          .blooms-apply { background: #e8f5e8; color: #2e7d32; }
-          .blooms-analyze { background: #fff3e0; color: #ef6c00; }
-          .blooms-evaluate { background: #fce4ec; color: #c2185b; }
-          .blooms-create { background: #f1f8e9; color: #558b2f; }
-          ul, ol { margin-left: 20px; }
-          .metadata { background: #f8f9fa; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+          body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; line-height: 1.6; background: #f5f5f5; }
+          .export-header { text-align: center; margin-bottom: 40px; padding: 30px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+          .export-slide { margin-bottom: 40px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
+          .slide-header-export { background: #f8f9fa; padding: 20px; border-bottom: 1px solid #e0e0e0; }
+          .slide-header-export h3 { margin: 0; color: #333; }
+          .slide-meta { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
+          .slide-type { background: #e9ecef; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
           .footer { text-align: center; margin-top: 40px; color: #666; font-size: 14px; }
+          ${this.getSlideComponentsCSS()}
         </style>
       </head>
       <body>
-        <div class="header">
+        <div class="export-header">
           <h1>${this.escapeHtml(config.title)}</h1>
-          <div class="metadata">
+          <div class="course-details">
             <p><strong>Duration:</strong> ${this.escapeHtml(
               config.estimatedDuration
             )}</p>
@@ -1247,57 +1768,36 @@ class CourseForgeApp {
             ${
               config.learningObjectives && config.learningObjectives.length > 0
                 ? `
-              <p><strong>Learning Objectives:</strong></p>
-              <ul>
-                ${config.learningObjectives
-                  .map((obj) => `<li>${this.escapeHtml(obj)}</li>`)
-                  .join("")}
-              </ul>
+              <div class="objectives">
+                <p><strong>Learning Objectives:</strong></p>
+                <ul>
+                  ${config.learningObjectives
+                    .map((obj) => `<li>${this.escapeHtml(obj)}</li>`)
+                    .join("")}
+                </ul>
+              </div>
             `
                 : ""
             }
           </div>
         </div>
         
-        ${chunks
-          .map(
-            (chunk, index) => `
-          <div class="chunk">
-            <div class="chunk-metadata">
-              <span class="blooms-level blooms-${
-                chunk.bloomsLevel || "understand"
-              }">${chunk.bloomsLevel || "understand"}</span>
-              Cognitive Load: ${chunk.cognitiveLoad || "medium"} |
-              Interaction: ${chunk.interactionLevel || "active"}
-              ${
-                chunk.assessmentType && chunk.assessmentType !== "none"
-                  ? "| Assessment: " + chunk.assessmentType
-                  : ""
-              }
-            </div>
-            <div class="slide-type">${this.getSlideTypeLabel(
-              chunk.slideType
-            )}</div>
-            <h2 class="chunk-title">${index + 1}. ${this.escapeHtml(
-              chunk.title
-            )}</h2>
-            <div class="chunk-content">${this.generateContentPreview(
-              chunk.generatedContent,
-              chunk.slideType
-            )}</div>
-          </div>
-        `
-          )
-          .join("")}
+        ${slidesHtml}
         
         <div class="footer">
-          <p>Generated by Course Forge MVP with AI and Learning Science Principles on ${new Date().toLocaleDateString()}</p>
-          <p>Total sections: ${
-            chunks.length
-          } | Bloom's distribution: ${JSON.stringify(
-      this.analyzeLearningScience(chunks).bloomsDistribution
-    )}</p>
+          <p>Generated by Course Forge MVP with Interactive Slide Components on ${new Date().toLocaleDateString()}</p>
+          <p>Total slides: ${chunks.length} | Interactive components: ${
+      chunks.filter((c) =>
+        ["flipCards", "tabs", "multipleChoice", "faq", "popups"].includes(
+          c.slideType
+        )
+      ).length
+    }</p>
         </div>
+        
+        <script>
+          ${this.getSlideComponentsJS()}
+        </script>
       </body>
       </html>
     `;
@@ -1333,6 +1833,7 @@ class CourseForgeApp {
     this.stateManager.cleanup();
     this.eventSystem.cleanup();
     this.llmService.cleanup();
+    this.slideComponents.cleanup();
 
     console.log("Course Forge cleaned up");
   }
@@ -1345,7 +1846,7 @@ let courseForge = null;
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     courseForge = new CourseForgeApp();
-    await courseForge.init(); // Call init explicitly after construction
+    await courseForge.init();
     window.courseForge = courseForge;
 
     // Setup global error handlers
