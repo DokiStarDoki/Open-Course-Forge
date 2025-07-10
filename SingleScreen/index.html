@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Course Forge MVP</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: #f5f5f5;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .app-container {
+        display: flex;
+        height: 100vh;
+      }
+
+      /* Info Drawer Styles */
+      .info-drawer {
+        width: 300px;
+        background: white;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+        transition: width 0.3s ease;
+        overflow: hidden;
+        flex-shrink: 0;
+        min-height: 100vh;
+      }
+
+      .info-drawer.collapsed {
+        width: 60px;
+      }
+
+      .drawer-header {
+        padding: 16px;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .drawer-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+      }
+
+      .collapse-btn {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 4px;
+      }
+
+      .collapse-btn:hover {
+        background: #f0f0f0;
+      }
+
+      .drawer-content {
+        flex: 1;
+        padding: 16px;
+        overflow-y: auto;
+      }
+
+      .config-section {
+        margin-bottom: 24px;
+      }
+
+      .config-section h3 {
+        font-size: 14px;
+        font-weight: 600;
+        color: #666;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .form-group {
+        margin-bottom: 16px;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 4px;
+        font-weight: 500;
+        color: #333;
+        font-size: 14px;
+      }
+
+      .form-group input,
+      .form-group textarea,
+      .form-group select {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #d0d0d0;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.2s;
+      }
+
+      .form-group input:focus,
+      .form-group textarea:focus,
+      .form-group select:focus {
+        outline: none;
+        border-color: #007bff;
+      }
+
+      .form-group textarea {
+        resize: vertical;
+        min-height: 80px;
+      }
+
+      .upload-area {
+        border: 2px dashed #d0d0d0;
+        border-radius: 6px;
+        padding: 24px;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.2s;
+      }
+
+      .upload-area:hover {
+        border-color: #007bff;
+      }
+
+      .upload-area.dragover {
+        border-color: #007bff;
+        background: #f0f8ff;
+      }
+
+      .uploaded-files {
+        margin-top: 12px;
+      }
+
+      .uploaded-file {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+
+      .uploaded-file .file-info {
+        flex: 1;
+      }
+
+      .uploaded-file .file-name {
+        font-weight: 500;
+        color: #333;
+      }
+
+      .uploaded-file .file-size {
+        color: #666;
+        font-size: 12px;
+      }
+
+      .uploaded-file .remove-btn {
+        background: none;
+        border: none;
+        color: #dc3545;
+        cursor: pointer;
+        font-size: 16px;
+        padding: 4px;
+        border-radius: 4px;
+      }
+
+      .uploaded-file .remove-btn:hover {
+        background: #f8d7da;
+      }
+
+      .action-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .btn {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background: #007bff;
+        color: white;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: #0056b3;
+      }
+
+      .btn-secondary {
+        background: #6c757d;
+        color: white;
+      }
+
+      .btn-secondary:hover:not(:disabled) {
+        background: #545b62;
+      }
+
+      .btn-success {
+        background: #28a745;
+        color: white;
+      }
+
+      .btn-success:hover:not(:disabled) {
+        background: #1e7e34;
+      }
+
+      .btn.loading {
+        pointer-events: none;
+      }
+
+      .btn.loading::after {
+        content: "";
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 12px;
+        height: 12px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top: 2px solid white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: translateY(-50%) rotate(0deg);
+        }
+        100% {
+          transform: translateY(-50%) rotate(360deg);
+        }
+      }
+
+      .progress-section {
+        background: #f8f9fa;
+        padding: 16px;
+        border-radius: 6px;
+        margin-top: 16px;
+      }
+
+      .progress-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 14px;
+      }
+
+      .progress-item:last-child {
+        margin-bottom: 0;
+      }
+
+      /* Main Workspace Styles */
+      .main-workspace {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: #f8f9fa;
+      }
+
+      .workspace-header {
+        background: white;
+        padding: 16px 24px;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .workspace-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #333;
+      }
+
+      .workspace-controls {
+        display: flex;
+        gap: 12px;
+      }
+
+      .chunks-container {
+        flex: 1;
+        padding: 24px;
+        overflow-y: auto;
+      }
+
+      .chunk-card {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s, box-shadow 0.2s;
+        cursor: move;
+      }
+
+      .chunk-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      }
+
+      .chunk-card.dragging {
+        transform: rotate(2deg);
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        opacity: 0.8;
+      }
+
+      .chunk-card.locked {
+        border-left: 4px solid #ffc107;
+      }
+
+      .chunk-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+
+      .chunk-number {
+        background: #007bff;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 600;
+        min-width: 40px;
+        text-align: center;
+      }
+
+      .chunk-number.locked {
+        background: #ffc107;
+        color: #333;
+      }
+
+      .chunk-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .chunk-actions button {
+        padding: 6px 12px;
+        border: none;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        background: #f8f9fa;
+        border: 1px solid #d0d0d0;
+        transition: all 0.2s;
+      }
+
+      .chunk-actions button:hover {
+        background: #e9ecef;
+      }
+
+      .chunk-actions button.btn-danger {
+        background: #dc3545;
+        color: white;
+        border-color: #dc3545;
+      }
+
+      .chunk-actions button.btn-danger:hover {
+        background: #c82333;
+      }
+
+      .chunk-actions button.btn-success {
+        background: #28a745;
+        color: white;
+        border-color: #28a745;
+      }
+
+      .chunk-actions button.btn-success:hover {
+        background: #218838;
+      }
+
+      .chunk-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        border: none;
+        background: none;
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 12px;
+        border-radius: 4px;
+        transition: all 0.2s;
+      }
+
+      .chunk-title:focus {
+        outline: none;
+        background: #f8f9fa;
+        border: 1px solid #007bff;
+      }
+
+      .chunk-section {
+        margin-bottom: 16px;
+      }
+
+      .chunk-section h4 {
+        font-size: 14px;
+        font-weight: 600;
+        color: #666;
+        margin-bottom: 8px;
+      }
+
+      .chunk-guidance {
+        background: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 12px;
+        min-height: 60px;
+        resize: vertical;
+        font-size: 14px;
+        line-height: 1.4;
+        width: 100%;
+      }
+
+      .chunk-guidance:focus {
+        outline: none;
+        border-color: #007bff;
+      }
+
+      .chunk-content {
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 12px;
+        min-height: 100px;
+        resize: vertical;
+        font-size: 14px;
+        line-height: 1.4;
+        width: 100%;
+      }
+
+      .chunk-content:focus {
+        outline: none;
+        border-color: #007bff;
+      }
+
+      .slide-type-selector {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #d0d0d0;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        font-size: 14px;
+      }
+
+      .slide-type-content {
+        background: #f0f8ff;
+        border: 1px solid #b3d7ff;
+        border-radius: 6px;
+        padding: 12px;
+        min-height: 80px;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .slide-type-content.empty {
+        color: #666;
+        font-style: italic;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #666;
+      }
+
+      .empty-state h3 {
+        font-size: 20px;
+        margin-bottom: 8px;
+      }
+
+      .empty-state p {
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+
+      /* Status Messages */
+      .status-message {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        z-index: 1000;
+        min-width: 300px;
+        transform: translateX(400px);
+        transition: transform 0.3s ease;
+      }
+
+      .status-message.show {
+        transform: translateX(0);
+      }
+
+      .status-message.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .status-message.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+
+      .status-message.warning {
+        background: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffeaa7;
+      }
+
+      .status-message.info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+
+      .status-message.loading {
+        background: #e2e3e5;
+        color: #383d41;
+        border: 1px solid #d6d8db;
+      }
+
+      /* Responsive design */
+      @media (max-width: 768px) {
+        .info-drawer {
+          width: 100%;
+          position: fixed;
+          top: 0;
+          left: 0;
+          z-index: 1000;
+          transform: translateX(-100%);
+          transition: transform 0.3s ease;
+        }
+
+        .info-drawer.open {
+          transform: translateX(0);
+        }
+
+        .workspace-header {
+          padding: 12px 16px;
+        }
+
+        .chunks-container {
+          padding: 16px;
+        }
+
+        .chunk-card {
+          padding: 16px;
+        }
+      }
+
+      /* Hidden class for collapsed drawer content */
+      .info-drawer.collapsed .drawer-content {
+        display: none;
+      }
+
+      .info-drawer.collapsed .drawer-title {
+        display: none;
+      }
+
+      .info-drawer.collapsed .collapse-btn {
+        margin: 0 auto;
+      }
+
+      /* Additional utility classes */
+      .text-muted {
+        color: #666;
+      }
+
+      .text-danger {
+        color: #dc3545;
+      }
+
+      .text-success {
+        color: #28a745;
+      }
+
+      .d-none {
+        display: none;
+      }
+
+      .mt-2 {
+        margin-top: 8px;
+      }
+
+      .mb-2 {
+        margin-bottom: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Info Drawer -->
+      <div class="info-drawer" id="info-drawer">
+        <div class="drawer-header">
+          <h2 class="drawer-title">Course Setup</h2>
+          <button class="collapse-btn" id="collapse-btn">←</button>
+        </div>
+        <div class="drawer-content">
+          <!-- Course Configuration -->
+          <div class="config-section">
+            <h3>Course Configuration</h3>
+            <div class="form-group">
+              <label for="course-title">Course Title *</label>
+              <input
+                type="text"
+                id="course-title"
+                placeholder="Enter course title"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label for="course-duration">Estimated Duration</label>
+              <input
+                type="text"
+                id="course-duration"
+                placeholder="45 minutes"
+                value="45 minutes"
+              />
+            </div>
+            <div class="form-group">
+              <label for="target-audience">Target Audience</label>
+              <input
+                type="text"
+                id="target-audience"
+                placeholder="business professionals"
+                value="business professionals"
+              />
+            </div>
+            <div class="form-group">
+              <label for="learning-objectives">Learning Objectives</label>
+              <textarea
+                id="learning-objectives"
+                placeholder="List key learning objectives (one per line)..."
+              ></textarea>
+            </div>
+            <div class="form-group">
+              <label for="ai-guidance">Additional Guidance for AI</label>
+              <textarea
+                id="ai-guidance"
+                placeholder="Any specific instructions for content generation..."
+              ></textarea>
+            </div>
+          </div>
+
+          <!-- Source Content Upload -->
+          <div class="config-section">
+            <h3>Source Content Files</h3>
+            <div class="upload-area" id="upload-area">
+              <p>📁 Drop files here or click to browse</p>
+              <p class="text-muted" style="font-size: 12px; margin-top: 8px">
+                Supported: PDF, Word, Text, Markdown
+              </p>
+              <input
+                type="file"
+                id="file-input"
+                multiple
+                accept=".pdf,.doc,.docx,.txt,.md"
+                style="display: none"
+              />
+            </div>
+            <div class="uploaded-files" id="uploaded-files"></div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-buttons">
+            <button class="btn btn-secondary" id="load-course-btn">
+              Load Course
+            </button>
+            <button class="btn btn-primary" id="generate-chunks-btn">
+              Generate Chunks
+            </button>
+            <button class="btn btn-secondary" id="rechunk-btn">
+              Rechunk with Feedback
+            </button>
+          </div>
+
+          <!-- Progress Section -->
+          <div class="progress-section">
+            <h3>Course Progress</h3>
+            <div class="progress-item">
+              <span>Total Chunks:</span>
+              <span id="total-chunks">0</span>
+            </div>
+            <div class="progress-item">
+              <span>Chunks with Content:</span>
+              <span id="chunks-with-content">0</span>
+            </div>
+            <div class="progress-item">
+              <span>Generated Slides:</span>
+              <span id="generated-slides">0</span>
+            </div>
+            <div class="action-buttons" style="margin-top: 12px">
+              <button class="btn btn-success" id="preview-course-btn">
+                Preview Course
+              </button>
+              <button class="btn btn-success" id="export-json-btn">
+                Export as JSON
+              </button>
+              <button class="btn btn-success" id="export-html-btn">
+                Export as HTML
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Workspace -->
+      <div class="main-workspace">
+        <div class="workspace-header">
+          <h1 class="workspace-title">Course Chunks</h1>
+          <div class="workspace-controls">
+            <button class="btn btn-primary" id="generate-all-btn">
+              Generate All Slide Content
+            </button>
+            <button class="btn btn-secondary" id="add-chunk-btn">
+              Add Chunk
+            </button>
+          </div>
+        </div>
+
+        <div class="chunks-container" id="chunks-container">
+          <div class="empty-state" id="empty-state">
+            <h3>No chunks created yet</h3>
+            <p>
+              Start by configuring your course settings and generating initial
+              chunks.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Message Container -->
+    <div id="status-message" class="status-message"></div>
+
+    <!-- Load Scripts in Order -->
+    <script src="config.js"></script>
+    <script src="status-manager.js"></script>
+    <script src="event-system.js"></script>
+    <script src="state-manager.js"></script>
+    <script src="file-processor.js"></script>
+    <script src="simple-llm-service.js"></script>
+    <script src="course-forge-app.js"></script>
+  </body>
+</html>
