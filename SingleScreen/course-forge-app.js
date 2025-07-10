@@ -1,6 +1,6 @@
 /**
- * Course Forge MVP - Main Application
- * Single-screen course creation interface
+ * Course Forge MVP - Main Application with Real AI Integration
+ * Single-screen course creation interface with learning science principles
  */
 
 class CourseForgeApp {
@@ -33,7 +33,21 @@ class CourseForgeApp {
       this.setupEventListeners();
 
       // Wait for LLM service to be ready
-      await this.llmService.ensureReady();
+      try {
+        await this.llmService.ensureReady();
+        StatusManager.showSuccess("AI service connected successfully!");
+
+        // Show service health info
+        const health = await this.llmService.getHealthCheck();
+        if (CONFIG.DEBUG.ENABLED) {
+          console.log("LLM Service Health:", health);
+        }
+      } catch (error) {
+        console.error("LLM service initialization failed:", error);
+        StatusManager.showError(
+          "AI service connection failed: " + error.message
+        );
+      }
 
       // Restore UI from state
       this.populateFormFromState();
@@ -319,21 +333,85 @@ class CourseForgeApp {
     }
 
     try {
-      StatusManager.showLoading("Generating chunks...");
+      StatusManager.showLoading("Generating chunks with AI...");
 
+      // Use real AI to generate chunks with learning science principles
       const chunks = await this.llmService.generateChunks(config);
       this.stateManager.setState("chunks", chunks);
 
       this.renderChunks();
       this.updateProgress();
 
+      // Show learning science insights
+      const insights = this.analyzeLearningScience(chunks);
       StatusManager.showSuccess(
-        `Generated ${chunks.length} chunks successfully!`
+        `Generated ${chunks.length} chunks with learning science optimization!`
       );
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log("Learning Science Analysis:", insights);
+      }
     } catch (error) {
       console.error("Error generating chunks:", error);
       StatusManager.showError("Error generating chunks: " + error.message);
     }
+  }
+
+  analyzeLearningScience(chunks) {
+    const bloomsDistribution = {};
+    const cognitiveLoadDistribution = {};
+    let assessmentCount = 0;
+
+    chunks.forEach((chunk) => {
+      // Bloom's taxonomy analysis
+      const blooms = chunk.bloomsLevel || "understand";
+      bloomsDistribution[blooms] = (bloomsDistribution[blooms] || 0) + 1;
+
+      // Cognitive load analysis
+      const load = chunk.cognitiveLoad || "medium";
+      cognitiveLoadDistribution[load] =
+        (cognitiveLoadDistribution[load] || 0) + 1;
+
+      // Assessment analysis
+      if (chunk.assessmentType && chunk.assessmentType !== "none") {
+        assessmentCount++;
+      }
+    });
+
+    return {
+      bloomsDistribution,
+      cognitiveLoadDistribution,
+      assessmentCount,
+      totalChunks: chunks.length,
+      hasProgression: this.checkBloomsProgression(chunks),
+    };
+  }
+
+  checkBloomsProgression(chunks) {
+    const bloomsOrder = [
+      "remember",
+      "understand",
+      "apply",
+      "analyze",
+      "evaluate",
+      "create",
+    ];
+    const chunkLevels = chunks.map(
+      (chunk) => chunk.bloomsLevel || "understand"
+    );
+
+    // Check if there's generally increasing complexity
+    let hasProgression = false;
+    for (let i = 0; i < chunkLevels.length - 1; i++) {
+      const currentIndex = bloomsOrder.indexOf(chunkLevels[i]);
+      const nextIndex = bloomsOrder.indexOf(chunkLevels[i + 1]);
+      if (nextIndex > currentIndex) {
+        hasProgression = true;
+        break;
+      }
+    }
+
+    return hasProgression;
   }
 
   async rechunkWithFeedback() {
@@ -345,7 +423,9 @@ class CourseForgeApp {
       return;
     }
 
-    const confirmed = confirm("This will regenerate all chunks. Continue?");
+    const confirmed = confirm(
+      "This will regenerate all chunks using AI. Continue?"
+    );
     if (!confirmed) return;
 
     await this.generateChunks();
@@ -364,7 +444,7 @@ class CourseForgeApp {
 
     try {
       StatusManager.showLoading(
-        `Generating content for ${chunksWithoutContent.length} chunks...`
+        `Generating AI content for ${chunksWithoutContent.length} chunks...`
       );
 
       const config = this.stateManager.getState("courseConfig");
@@ -372,12 +452,12 @@ class CourseForgeApp {
       for (let i = 0; i < chunksWithoutContent.length; i++) {
         const chunk = chunksWithoutContent[i];
         StatusManager.update(
-          `Generating content for "${chunk.title}" (${i + 1}/${
+          `Generating AI content for "${chunk.title}" (${i + 1}/${
             chunksWithoutContent.length
           })`
         );
 
-        // Generate new slide content based on source content and slide type
+        // Generate new slide content using real AI
         const content = await this.llmService.generateSlideContent(
           chunk,
           config
@@ -391,7 +471,7 @@ class CourseForgeApp {
       this.updateProgress();
 
       StatusManager.showSuccess(
-        `Generated content for ${chunksWithoutContent.length} chunks!`
+        `Generated AI content for ${chunksWithoutContent.length} chunks!`
       );
     } catch (error) {
       console.error("Error generating content:", error);
@@ -409,7 +489,9 @@ class CourseForgeApp {
     }
 
     try {
-      StatusManager.showLoading(`Generating content for "${chunk.title}"...`);
+      StatusManager.showLoading(
+        `Generating AI content for "${chunk.title}"...`
+      );
 
       const config = this.stateManager.getState("courseConfig");
       const content = await this.llmService.generateSlideContent(chunk, config);
@@ -421,7 +503,7 @@ class CourseForgeApp {
       this.renderChunks();
       this.updateProgress();
 
-      StatusManager.showSuccess(`Generated content for "${chunk.title}"`);
+      StatusManager.showSuccess(`Generated AI content for "${chunk.title}"`);
     } catch (error) {
       console.error("Error generating chunk content:", error);
       StatusManager.showError("Error generating content: " + error.message);
@@ -441,6 +523,13 @@ class CourseForgeApp {
       isLocked: false,
       generatedContent: null,
       createdAt: new Date().toISOString(),
+      // Learning science metadata
+      bloomsLevel: "understand",
+      learningObjectiveAlignment: [],
+      cognitiveLoad: "medium",
+      reinforcementStrategy: "",
+      assessmentType: "none",
+      interactionLevel: "active",
     };
 
     chunks.push(newChunk);
@@ -645,6 +734,11 @@ class CourseForgeApp {
       ? this.generateContentPreview(chunk.generatedContent, chunk.slideType)
       : '<span class="text-muted">No slide content generated yet</span>';
 
+    // Learning science metadata
+    const bloomsLevel = chunk.bloomsLevel || "understand";
+    const cognitiveLoad = chunk.cognitiveLoad || "medium";
+    const interactionLevel = chunk.interactionLevel || "active";
+
     return `
       <div class="chunk-card ${chunk.isLocked ? "locked" : ""}" 
            draggable="true" 
@@ -672,6 +766,32 @@ class CourseForgeApp {
               chunk.id
             }')" class="btn-danger">Delete</button>
           </div>
+        </div>
+
+        <!-- Learning Science Metadata -->
+        <div class="chunk-metadata">
+          <div class="metadata-item">
+            <span class="metadata-label">Bloom's:</span>
+            <span class="blooms-level blooms-${bloomsLevel}">${bloomsLevel}</span>
+          </div>
+          <div class="metadata-item">
+            <span class="metadata-label">Load:</span>
+            <span class="cognitive-load load-${cognitiveLoad}">${cognitiveLoad}</span>
+          </div>
+          <div class="metadata-item">
+            <span class="metadata-label">Interaction:</span>
+            <span class="metadata-value">${interactionLevel}</span>
+          </div>
+          ${
+            chunk.assessmentType && chunk.assessmentType !== "none"
+              ? `
+          <div class="metadata-item">
+            <span class="metadata-label">Assessment:</span>
+            <span class="metadata-value">${chunk.assessmentType}</span>
+          </div>
+          `
+              : ""
+          }
         </div>
         
         <input type="text" 
@@ -715,7 +835,7 @@ class CourseForgeApp {
         </div>
         
         <div class="chunk-section">
-          <h4>Generated Slide Content <span class="text-muted">(Formatted for presentation)</span></h4>
+          <h4>Generated Slide Content <span class="text-muted">(AI-generated, pedagogically optimized)</span></h4>
           <div class="slide-type-content ${hasContent ? "" : "empty"}">
             ${contentPreview}
           </div>
@@ -723,7 +843,7 @@ class CourseForgeApp {
             !hasContent && hasSourceContent
               ? "<button onclick=\"courseForge.generateChunkContent('" +
                 chunk.id +
-                '\')" class="btn btn-primary mt-2">Generate Slide Content from Source</button>'
+                '\')" class="btn btn-primary mt-2">Generate AI Slide Content from Source</button>'
               : ""
           }
         </div>
@@ -978,6 +1098,14 @@ class CourseForgeApp {
           .chunk-title { color: #333; margin-bottom: 15px; }
           .chunk-content { margin-bottom: 15px; }
           .chunk-type { background: #f0f0f0; padding: 5px 10px; border-radius: 4px; font-size: 12px; }
+          .chunk-metadata { background: #f8f9fa; padding: 10px; margin-bottom: 10px; border-radius: 4px; font-size: 12px; }
+          .blooms-level { padding: 2px 6px; border-radius: 3px; font-weight: bold; }
+          .blooms-remember { background: #e3f2fd; color: #1565c0; }
+          .blooms-understand { background: #f3e5f5; color: #7b1fa2; }
+          .blooms-apply { background: #e8f5e8; color: #2e7d32; }
+          .blooms-analyze { background: #fff3e0; color: #ef6c00; }
+          .blooms-evaluate { background: #fce4ec; color: #c2185b; }
+          .blooms-create { background: #f1f8e9; color: #558b2f; }
         </style>
       </head>
       <body>
@@ -992,6 +1120,18 @@ class CourseForgeApp {
           .map(
             (chunk, index) => `
           <div class="chunk">
+            <div class="chunk-metadata">
+              <span class="blooms-level blooms-${
+                chunk.bloomsLevel || "understand"
+              }">${chunk.bloomsLevel || "understand"}</span>
+              | Load: ${chunk.cognitiveLoad || "medium"}
+              | ${chunk.interactionLevel || "active"}
+              ${
+                chunk.assessmentType && chunk.assessmentType !== "none"
+                  ? "| " + chunk.assessmentType
+                  : ""
+              }
+            </div>
             <h2 class="chunk-title">${index + 1}. ${this.escapeHtml(
               chunk.title
             )}</h2>
@@ -1061,6 +1201,14 @@ class CourseForgeApp {
           .chunk-title { color: #333; margin-bottom: 20px; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
           .chunk-content { margin-bottom: 15px; }
           .slide-type { background: #e9ecef; padding: 5px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 10px; display: inline-block; }
+          .chunk-metadata { background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; }
+          .blooms-level { padding: 2px 6px; border-radius: 3px; font-weight: bold; margin-right: 8px; }
+          .blooms-remember { background: #e3f2fd; color: #1565c0; }
+          .blooms-understand { background: #f3e5f5; color: #7b1fa2; }
+          .blooms-apply { background: #e8f5e8; color: #2e7d32; }
+          .blooms-analyze { background: #fff3e0; color: #ef6c00; }
+          .blooms-evaluate { background: #fce4ec; color: #c2185b; }
+          .blooms-create { background: #f1f8e9; color: #558b2f; }
           ul, ol { margin-left: 20px; }
           .metadata { background: #f8f9fa; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
           .footer { text-align: center; margin-top: 40px; color: #666; font-size: 14px; }
@@ -1095,6 +1243,18 @@ class CourseForgeApp {
           .map(
             (chunk, index) => `
           <div class="chunk">
+            <div class="chunk-metadata">
+              <span class="blooms-level blooms-${
+                chunk.bloomsLevel || "understand"
+              }">${chunk.bloomsLevel || "understand"}</span>
+              Cognitive Load: ${chunk.cognitiveLoad || "medium"} |
+              Interaction: ${chunk.interactionLevel || "active"}
+              ${
+                chunk.assessmentType && chunk.assessmentType !== "none"
+                  ? "| Assessment: " + chunk.assessmentType
+                  : ""
+              }
+            </div>
             <div class="slide-type">${this.getSlideTypeLabel(
               chunk.slideType
             )}</div>
@@ -1111,8 +1271,12 @@ class CourseForgeApp {
           .join("")}
         
         <div class="footer">
-          <p>Generated by Course Forge MVP on ${new Date().toLocaleDateString()}</p>
-          <p>Total sections: ${chunks.length}</p>
+          <p>Generated by Course Forge MVP with AI and Learning Science Principles on ${new Date().toLocaleDateString()}</p>
+          <p>Total sections: ${
+            chunks.length
+          } | Bloom's distribution: ${JSON.stringify(
+      this.analyzeLearningScience(chunks).bloomsDistribution
+    )}</p>
         </div>
       </body>
       </html>

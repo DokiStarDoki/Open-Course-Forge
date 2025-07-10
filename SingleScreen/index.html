@@ -553,6 +553,86 @@
         border: 1px solid #d6d8db;
       }
 
+      /* Learning Science Indicators */
+      .chunk-metadata {
+        background: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin-bottom: 12px;
+        font-size: 12px;
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .metadata-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .metadata-label {
+        font-weight: 600;
+        color: #666;
+      }
+
+      .metadata-value {
+        color: #333;
+      }
+
+      .blooms-level {
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .blooms-remember {
+        background: #e3f2fd;
+        color: #1565c0;
+      }
+      .blooms-understand {
+        background: #f3e5f5;
+        color: #7b1fa2;
+      }
+      .blooms-apply {
+        background: #e8f5e8;
+        color: #2e7d32;
+      }
+      .blooms-analyze {
+        background: #fff3e0;
+        color: #ef6c00;
+      }
+      .blooms-evaluate {
+        background: #fce4ec;
+        color: #c2185b;
+      }
+      .blooms-create {
+        background: #f1f8e9;
+        color: #558b2f;
+      }
+
+      .cognitive-load {
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .load-low {
+        background: #e8f5e8;
+        color: #2e7d32;
+      }
+      .load-medium {
+        background: #fff3e0;
+        color: #ef6c00;
+      }
+      .load-high {
+        background: #ffebee;
+        color: #c62828;
+      }
+
       /* Responsive design */
       @media (max-width: 768px) {
         .info-drawer {
@@ -768,11 +848,13 @@
     <div id="status-message" class="status-message"></div>
 
     <!-- Load Scripts in Order -->
+    <script src="local.config.js"></script>
     <script src="config.js"></script>
     <script src="status-manager.js"></script>
     <script src="event-system.js"></script>
     <script src="state-manager.js"></script>
     <script src="file-processor.js"></script>
+    <script src="prompts.js"></script>
     <script src="simple-llm-service.js"></script>
     <script src="course-forge-app.js"></script>
   </body>
