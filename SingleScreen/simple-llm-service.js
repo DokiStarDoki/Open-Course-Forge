@@ -9,7 +9,7 @@ class SimpleLLMService {
     this.apiKey = null;
     this.baseURL = null;
     this.model = null;
-    this.maxTokens = 4000;
+    this.maxTokens = 10000;
     this.coursePrompts = null;
     this.initializationPromise = this.initialize();
   }
@@ -196,13 +196,17 @@ class SimpleLLMService {
   }
 
   /**
-   * Generate initial chunks from course configuration using real AI
+   * Generate initial chunks using three-pass workflow
+   * Pass 1: Structure, Pass 2: Content, Pass 3: Format
    */
   async generateChunks(courseConfig) {
     await this.ensureReady();
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log("Generating chunks with AI for course:", courseConfig.title);
+      console.log(
+        "Starting three-pass chunk generation for:",
+        courseConfig.title
+      );
     }
 
     // Validate configuration
@@ -212,92 +216,260 @@ class SimpleLLMService {
     }
 
     try {
-      // Generate chunks using learning science principles
-      const prompt = this.coursePrompts.generateChunksPrompt(courseConfig);
+      // Calculate optimal chunk count
+      const chunkInfo = this.coursePrompts.calculateOptimalChunkCount(
+        courseConfig.estimatedDuration
+      );
 
-      const response = await this.makeAPICall(prompt, {
-        maxTokens: 4000,
-        temperature: 0.8, // Slightly higher for creativity in structure
-      });
-
-      // Parse JSON response
-      let chunksData;
-      try {
-        chunksData = JSON.parse(response);
-      } catch (parseError) {
-        // Try to extract JSON from response if it's wrapped in text
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          chunksData = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error("Could not parse JSON response from AI");
-        }
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log("Chunk calculation:", chunkInfo);
       }
 
-      if (!chunksData.chunks || !Array.isArray(chunksData.chunks)) {
-        throw new Error("Invalid chunks data structure from AI");
-      }
+      // PASS 1: Generate course structure
+      const chunkStructures = await this.generateChunkStructures(
+        courseConfig,
+        chunkInfo.totalChunks
+      );
 
-      // Process and enhance chunks with learning science metadata
-      const processedChunks = chunksData.chunks.map((chunk, index) => ({
-        id: `chunk-${Date.now()}-${index}`,
-        title: chunk.title,
-        slideType: chunk.slideType || "textAndBullets",
-        sourceContent: chunk.sourceContent || "",
-        groundTruth: chunk.groundTruth || "",
-        estimatedTime: chunk.estimatedTime || "3 minutes",
-        order: index,
-        isLocked: false,
-        generatedContent: null, // Will be generated separately
-        createdAt: new Date().toISOString(),
-        // Learning science metadata
-        bloomsLevel: chunk.bloomsLevel || "understand",
-        learningObjectiveAlignment: chunk.learningObjectiveAlignment || [],
-        cognitiveLoad: chunk.cognitiveLoad || "medium",
-        reinforcementStrategy: chunk.reinforcementStrategy || "",
-        assessmentType: chunk.assessmentType || "none",
-        interactionLevel: chunk.interactionLevel || "active",
-      }));
+      // PASS 2: Develop content for each chunk
+      const chunksWithContent = await this.generateChunkContents(
+        chunkStructures,
+        courseConfig
+      );
+
+      // PASS 3: Determine optimal slide types (we'll do this later in generateSlideContent)
+      const finalChunks = this.finalizeChunks(chunksWithContent, chunkInfo);
 
       if (CONFIG.DEBUG.ENABLED) {
         console.log(
-          `Generated ${processedChunks.length} chunks with learning science principles`
+          `Generated ${finalChunks.length} chunks using three-pass workflow`
         );
         console.log(
           "Bloom's distribution:",
-          this.analyzeBloomsDistribution(processedChunks)
+          this.analyzeBloomsDistribution(finalChunks)
         );
       }
 
-      return processedChunks;
+      return finalChunks;
     } catch (error) {
-      console.error("Error generating chunks:", error);
+      console.error("Error in three-pass chunk generation:", error);
       throw new Error(`Failed to generate chunks: ${error.message}`);
     }
   }
 
   /**
-   * Generate content for a specific chunk using AI
+   * PASS 1: Generate chunk structures/outlines
+   */
+  async generateChunkStructures(courseConfig, targetChunkCount) {
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log(
+        `Pass 1: Generating structure for ${targetChunkCount} chunks`
+      );
+    }
+
+    const prompt = this.coursePrompts.generateChunkStructurePrompt(
+      courseConfig,
+      targetChunkCount
+    );
+
+    const response = await this.makeAPICall(prompt, {
+      maxTokens: 3000,
+      temperature: 0.8,
+    });
+
+    // Parse JSON response
+    let structureData;
+    try {
+      structureData = JSON.parse(response);
+    } catch (parseError) {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        structureData = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("Could not parse structure JSON from AI");
+      }
+    }
+
+    if (!structureData.courseStructure?.chunks) {
+      throw new Error("Invalid structure data from AI");
+    }
+
+    return structureData.courseStructure.chunks;
+  }
+
+  /**
+   * PASS 2: Generate detailed content for each chunk
+   */
+  async generateChunkContents(chunkStructures, courseConfig) {
+    if (CONFIG.DEBUG.ENABLED) {
+      console.log(
+        `Pass 2: Generating content for ${chunkStructures.length} chunks`
+      );
+    }
+
+    const chunksWithContent = [];
+
+    for (let i = 0; i < chunkStructures.length; i++) {
+      const structure = chunkStructures[i];
+
+      // Update progress if StatusManager is available
+      if (
+        typeof StatusManager !== "undefined" &&
+        typeof StatusManager.updateBatch === "function"
+      ) {
+        StatusManager.updateBatch(
+          `Pass 2: Developing content for "${structure.title}" (${i + 1}/${
+            chunkStructures.length
+          })`
+        );
+      }
+
+      if (CONFIG.DEBUG.ENABLED) {
+        console.log(
+          `Generating content for chunk ${i + 1}: "${structure.title}"`
+        );
+      }
+
+      // Generate detailed content with context of other chunks
+      const prompt = this.coursePrompts.generateChunkContentPrompt(
+        structure,
+        courseConfig,
+        chunkStructures,
+        i
+      );
+
+      const response = await this.makeAPICall(prompt, {
+        maxTokens: 2500,
+        temperature: 0.7,
+      });
+
+      // Parse content response
+      let contentData;
+      try {
+        contentData = JSON.parse(response);
+      } catch (parseError) {
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          contentData = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error(`Could not parse content JSON for chunk ${i + 1}`);
+        }
+      }
+
+      if (!contentData.chunkContent) {
+        throw new Error(`Invalid content data for chunk ${i + 1}`);
+      }
+
+      // Combine structure and content
+      const fullChunk = {
+        ...structure,
+        ...contentData.chunkContent,
+        order: i,
+      };
+
+      chunksWithContent.push(fullChunk);
+
+      // Small delay to avoid rate limiting
+      if (i < chunkStructures.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+
+    return chunksWithContent;
+  }
+
+  /**
+   * Finalize chunks with metadata
+   */
+  finalizeChunks(chunksWithContent, chunkInfo) {
+    return chunksWithContent.map((chunk, index) => ({
+      id: `chunk-${Date.now()}-${index}`,
+      title: chunk.title,
+      slideType: this.selectInitialSlideType(chunk),
+      sourceContent: chunk.sourceContent || "",
+      groundTruth: chunk.groundTruth || "",
+      estimatedTime:
+        chunk.estimatedTime || `${chunkInfo.averageChunkTime} minutes`,
+      order: index,
+      isLocked: false,
+      generatedContent: null, // Will be generated in Pass 3
+      createdAt: new Date().toISOString(),
+      // Learning science metadata
+      bloomsLevel: chunk.bloomsLevel || "understand",
+      learningObjectiveAlignment: chunk.learningObjectiveAlignment || [],
+      cognitiveLoad: chunk.cognitiveLoad || "medium",
+      reinforcementStrategy: chunk.reinforcementStrategy || "",
+      assessmentType: chunk.assessmentType || "none",
+      interactionLevel: chunk.interactionLevel || "active",
+      connectionToPrevious: chunk.connectionToPrevious || "",
+      connectionToNext: chunk.connectionToNext || "",
+      keyTakeaways: chunk.keyTakeaways || [],
+    }));
+  }
+
+  /**
+   * Select initial slide type based on content and learning science
+   */
+  selectInitialSlideType(chunk) {
+    const bloomsLevel = chunk.bloomsLevel || "understand";
+    const assessmentType = chunk.assessmentType || "none";
+
+    // Special cases first
+    if (
+      chunk.title.toLowerCase().includes("welcome") ||
+      chunk.title.toLowerCase().includes("introduction")
+    ) {
+      return "title";
+    }
+
+    if (
+      chunk.title.toLowerCase().includes("overview") ||
+      chunk.title.toLowerCase().includes("objectives")
+    ) {
+      return "courseInfo";
+    }
+
+    if (assessmentType === "formative" || assessmentType === "summative") {
+      return "multipleChoice";
+    }
+
+    // Based on Bloom's level
+    switch (bloomsLevel) {
+      case "remember":
+        return "flipCards";
+      case "understand":
+        return "textAndImage";
+      case "apply":
+        return "textAndBullets";
+      case "analyze":
+        return "tabs";
+      case "evaluate":
+        return "faq";
+      case "create":
+        return "iconsWithTitles";
+      default:
+        return "textAndBullets";
+    }
+  }
+
+  /**
+   * PASS 3: Generate optimized slide content for specific slide type
    */
   async generateSlideContent(chunk, courseConfig) {
     await this.ensureReady();
 
     if (CONFIG.DEBUG.ENABLED) {
-      console.log("Generating AI content for chunk:", chunk.title);
+      console.log(
+        `Pass 3: Generating optimized ${chunk.slideType} content for "${chunk.title}"`
+      );
     }
 
     try {
-      // Determine Bloom's level for this chunk
-      const bloomsLevel =
-        chunk.bloomsLevel ||
-        this.coursePrompts.classifyBloomsLevel(chunk.groundTruth);
-
-      // Generate pedagogically optimized prompt
-      const prompt = this.coursePrompts.generateSlideContentPrompt(
+      // Use Pass 3 prompt for format optimization
+      const prompt = this.coursePrompts.generateSlideFormatPrompt(
         chunk,
-        courseConfig,
-        bloomsLevel,
-        [] // TODO: Pass previous chunks for reinforcement
+        chunk.slideType,
+        courseConfig
       );
 
       const response = await this.makeAPICall(prompt, {
@@ -308,12 +480,14 @@ class SimpleLLMService {
       // Parse JSON response
       let content;
       try {
-        content = JSON.parse(response);
+        const parsed = JSON.parse(response);
+        content = parsed.slideContent || parsed;
       } catch (parseError) {
         // Try to extract JSON from response
         const jsonMatch = response.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          content = JSON.parse(jsonMatch[0]);
+          const parsed = JSON.parse(jsonMatch[0]);
+          content = parsed.slideContent || parsed;
         } else {
           throw new Error("Could not parse JSON response from AI");
         }
@@ -324,7 +498,7 @@ class SimpleLLMService {
 
       if (CONFIG.DEBUG.ENABLED) {
         console.log(
-          `Generated ${chunk.slideType} content for "${chunk.title}"`
+          `Generated optimized ${chunk.slideType} content for "${chunk.title}"`
         );
       }
 

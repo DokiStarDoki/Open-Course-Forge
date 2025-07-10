@@ -333,27 +333,47 @@ class CourseForgeApp {
     }
 
     try {
-      StatusManager.showLoading("Generating chunks with AI...");
+      // Start batch processing to show progress
+      if (typeof StatusManager.startBatch === "function") {
+        StatusManager.startBatch("chunk-generation");
+      } else {
+        StatusManager.showLoading("Generating chunks with AI...");
+      }
 
-      // Use real AI to generate chunks with learning science principles
+      // Use real AI to generate chunks with three-pass workflow
       const chunks = await this.llmService.generateChunks(config);
-      this.stateManager.setState("chunks", chunks);
 
+      this.stateManager.setState("chunks", chunks);
       this.renderChunks();
       this.updateProgress();
 
       // Show learning science insights
       const insights = this.analyzeLearningScience(chunks);
-      StatusManager.showSuccess(
-        `Generated ${chunks.length} chunks with learning science optimization!`
-      );
+
+      if (typeof StatusManager.endBatch === "function") {
+        StatusManager.endBatch(
+          `Generated ${chunks.length} chunks with learning science optimization!`
+        );
+      } else {
+        StatusManager.showSuccess(
+          `Generated ${chunks.length} chunks with learning science optimization!`
+        );
+      }
 
       if (CONFIG.DEBUG.ENABLED) {
         console.log("Learning Science Analysis:", insights);
       }
     } catch (error) {
       console.error("Error generating chunks:", error);
-      StatusManager.showError("Error generating chunks: " + error.message);
+
+      if (typeof StatusManager.endBatch === "function") {
+        StatusManager.endBatch(
+          `Error generating chunks: ${error.message}`,
+          "error"
+        );
+      } else {
+        StatusManager.showError("Error generating chunks: " + error.message);
+      }
     }
   }
 

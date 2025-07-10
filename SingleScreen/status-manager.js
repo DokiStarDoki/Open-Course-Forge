@@ -92,6 +92,23 @@ class StatusManager {
     };
   }
 
+  // Static method for updating current message
+  static update(message) {
+    StatusManager.getInstance().update(message);
+  }
+
+  static startBatch(batchId) {
+    StatusManager.getInstance().startBatch(batchId);
+  }
+
+  static updateBatch(message) {
+    StatusManager.getInstance().updateBatch(message);
+  }
+
+  static endBatch(message = null, type = "success") {
+    StatusManager.getInstance().endBatch(message, type);
+  }
+
   show(message, type = "info", duration = 5000) {
     if (!this.statusElement) {
       this.init();
@@ -149,7 +166,7 @@ class StatusManager {
   startBatch(batchId) {
     this.processingBatch = true;
     this.currentBatchId = batchId;
-    this.showLoading(`Processing batch: ${batchId}`);
+    this.show(`Processing batch: ${batchId}`, "loading");
   }
 
   updateBatch(message) {
@@ -190,10 +207,5 @@ class StatusManager {
       this.statusElement.textContent = message;
       this.currentStatus.message = message;
     }
-  }
-
-  // Static method for updating current message
-  static update(message) {
-    StatusManager.getInstance().update(message);
   }
 }
